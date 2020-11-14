@@ -12,7 +12,7 @@ renderer-base = { path = "../renderer-base" }
 renderer-nodes = { path = "../renderer-nodes" }
 renderer-resources = { path = "../renderer-resources" }
 
-atelier-assets = { git = "https://github.com/aclysma/atelier-assets", branch = "indirect_handles", features = ["serde_importers"] }
+atelier-assets = { git = "https://github.com/amethyst/atelier-assets", branch = "packfiles", features = ["serde_importers", "asset_uuid_macro", "packfile_io"] }
 
 ash = ">0.30"
 vk-mem = "0.2"

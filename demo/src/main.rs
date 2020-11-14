@@ -11,6 +11,7 @@ use renderer_shell_vulkan_sdl2::Sdl2Window;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseState;
+use structopt::StructOpt;
 
 use crate::asset_resource::AssetResource;
 use crate::features::debug3d::DebugDraw3DResource;
@@ -36,20 +37,33 @@ mod resource_manager;
 mod test_scene;
 mod time;
 
+#[derive(StructOpt)]
+pub struct PackfileOpt {
+    /// Path to the packfile
+    #[structopt(name = "packfile", long, parse(from_os_str))]
+    pub packfile: Option<std::path::PathBuf>,
+}
+
 fn main() {
     init::logging_init();
-
-    // Spawn the daemon in a background thread. This could be a different process, but
-    // for simplicity we'll launch it here.
-    std::thread::spawn(move || {
-        daemon::run();
-    });
 
     let mut resources = Resources::default();
     resources.insert(TimeState::new());
 
-    // Connect to the daemon we just launched
-    init::atelier_init(&mut resources, "127.0.0.1:9999".to_string());
+    let opt = PackfileOpt::from_args();
+    if let Some(packfile_path) = opt.packfile {
+        // Initialize the packfile loader with the packfile path
+        init::atelier_init_packfile(&mut resources, packfile_path);
+    } else {
+        // Spawn the daemon in a background thread. This could be a different process, but
+        // for simplicity we'll launch it here.
+        std::thread::spawn(move || {
+            daemon::run();
+        });
+
+        // Connect to the daemon we just launched
+        init::atelier_init_daemon(&mut resources, "127.0.0.1:9999".to_string());
+    }
 
     let sdl2_systems = init::sdl2_init();
     init::imgui_init(&mut resources, &sdl2_systems.window);

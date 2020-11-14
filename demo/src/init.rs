@@ -10,7 +10,9 @@ use crate::game_renderer::{GameRenderer, SwapchainLifetimeListener};
 use crate::phases::TransparentRenderPhase;
 use crate::phases::{OpaqueRenderPhase, ShadowMapRenderPhase, UiRenderPhase};
 use crate::resource_manager::GameAssetManager;
-use atelier_assets::loader::{storage::DefaultIndirectionResolver, Loader, RpcIO};
+use atelier_assets::loader::{
+    packfile_io::PackfileReader, storage::DefaultIndirectionResolver, Loader, RpcIO,
+};
 use legion::Resources;
 use renderer::assets::AssetManager;
 use renderer::assets::{
@@ -61,12 +63,17 @@ pub fn logging_init() {
         .init();
 }
 
-pub fn atelier_init(
-    resources: &mut Resources,
-    connect_string: String,
-) {
+pub fn atelier_init_daemon(resources: &mut Resources, connect_string: String) {
     let rpc_loader = RpcIO::new(connect_string).unwrap();
     let loader = Loader::new(Box::new(rpc_loader));
+    let resolver = Box::new(DefaultIndirectionResolver);
+    resources.insert(AssetResource::new(loader, resolver));
+}
+
+pub fn atelier_init_packfile(resources: &mut Resources, pack_file: std::path::PathBuf) {
+    let packfile = std::fs::File::open(pack_file).unwrap();
+    let packfile_loader = PackfileReader::new(packfile).unwrap();
+    let loader = Loader::new(Box::new(packfile_loader));
     let resolver = Box::new(DefaultIndirectionResolver);
     resources.insert(AssetResource::new(loader, resolver));
 }
