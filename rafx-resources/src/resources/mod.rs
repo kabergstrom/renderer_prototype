@@ -7,6 +7,8 @@ pub(crate) use resource_arc::ResourceWithHash;
 mod resource_lookup;
 pub use resource_lookup::BufferKey;
 pub use resource_lookup::BufferResource;
+pub use resource_lookup::ComputePipelineKey;
+pub use resource_lookup::ComputePipelineResource;
 pub use resource_lookup::DescriptorSetLayoutResource;
 pub use resource_lookup::FramebufferResource;
 pub use resource_lookup::GraphicsPipelineResource;

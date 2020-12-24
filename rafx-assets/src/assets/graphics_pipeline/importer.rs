@@ -1,5 +1,5 @@
-use crate::assets::pipeline::{
-    MaterialAssetData, MaterialInstanceAssetData, PipelineAssetData, RenderpassAssetData,
+use crate::assets::graphics_pipeline::{
+    GraphicsPipelineAssetData, MaterialAssetData, MaterialInstanceAssetData, RenderpassAssetData,
     SamplerAssetData,
 };
 use atelier_assets::importer::{ImportedAsset, Importer, ImporterValue};
@@ -73,7 +73,7 @@ impl Importer for PipelineImporter {
     where
         Self: Sized,
     {
-        2
+        3
     }
 
     fn version(&self) -> u32 {
@@ -98,7 +98,7 @@ impl Importer for PipelineImporter {
             .unwrap_or_else(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
         *state = PipelineImporterState(Some(id));
 
-        let pipeline_asset = ron::de::from_reader::<_, PipelineAssetData>(source)?;
+        let pipeline_asset = ron::de::from_reader::<_, GraphicsPipelineAssetData>(source)?;
         log::trace!("IMPORTED PIPELINE:\n{:#?}", pipeline_asset);
 
         Ok(ImporterValue {

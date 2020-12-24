@@ -9,7 +9,7 @@ use crate::{
 };
 use ash::vk;
 use crossbeam_channel::{Receiver, Sender};
-use rafx_shell_vulkan::{MsaaLevel, VkImageRaw, VkResource};
+use rafx_api_vulkan::{MsaaLevel, VkImageRaw, VkResource};
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -265,9 +265,6 @@ fn graph_smoketest() {
 
         //println!("{:#?}", graph);
         let swapchain_surface_info = SwapchainSurfaceInfo {
-            color_format,
-            depth_format,
-            msaa_level,
             extents: vk::Extent2D {
                 width: 900,
                 height: 600,

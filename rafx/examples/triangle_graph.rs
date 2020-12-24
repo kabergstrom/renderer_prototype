@@ -9,11 +9,11 @@ use rafx::graph::{
 use rafx::resources::vk_description::SwapchainSurfaceInfo;
 use rafx::resources::{vk_description as dsc, ResourceArc};
 use rafx::resources::{ImageResource, ResourceManager};
-use rafx_shell_vulkan::{
+use rafx_api_vulkan::{
     FrameInFlight, MsaaLevel, VkContextBuilder, VkDeviceContext, VkImageRaw, VkSurface, Window,
 };
 
-use rafx_shell_vulkan_sdl2::Sdl2Window;
+use rafx_api_vulkan_sdl2::Sdl2Window;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::EventPump;
@@ -86,7 +86,6 @@ fn run(
     // initialization when dropped. You generally just want one of these.
     let vk_context = VkContextBuilder::new()
         .use_vulkan_debug_layer(true)
-        .msaa_level_priority(vec![MsaaLevel::Sample1])
         .prefer_mailbox_present_mode()
         .build(window)
         .unwrap();
@@ -227,10 +226,7 @@ fn render_frame(
 ) -> VkResult<()> {
     // Gather info for the frame to use
     let swapchain_surface_info = SwapchainSurfaceInfo {
-        color_format: surface.swapchain().swapchain_info.color_format,
-        depth_format: surface.swapchain().swapchain_info.depth_format,
         extents: surface.swapchain().swapchain_info.extents,
-        msaa_level: surface.swapchain().swapchain_info.msaa_level,
         surface_format: surface.swapchain().swapchain_info.surface_format,
     };
 
@@ -271,7 +267,6 @@ fn render_frame(
                 float32: [0.0, 0.0, 0.0, 0.0],
             }),
             RenderGraphImageConstraint {
-                samples: Some(swapchain_surface_info.msaa_level.into()),
                 format: Some(swapchain_surface_info.surface_format.format.into()),
                 ..Default::default()
             },
@@ -292,7 +287,7 @@ fn render_frame(
         opaque_pass.color,
         swapchain_image_view,
         RenderGraphImageSpecification {
-            samples: swapchain_surface_info.msaa_level.into(),
+            samples: MsaaLevel::Sample1.into(),
             format: swapchain_surface_info.surface_format.format.into(),
             aspect_flags: vk::ImageAspectFlags::COLOR,
             usage_flags: surface.swapchain().swapchain_info.image_usage_flags,

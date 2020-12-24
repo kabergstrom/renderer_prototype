@@ -1,10 +1,10 @@
 use ash::vk;
 use legion::*;
+use rafx::api_vulkan::VkDeviceContext;
 use rafx::assets::AssetManager;
-use rafx::graph::VisitRenderpassArgs;
+use rafx::graph::VisitRenderpassNodeArgs;
 use rafx::resources::vk_description as dsc;
 use rafx::resources::{RenderPassResource, ResourceArc, ResourceContext};
-use rafx::vulkan::VkDeviceContext;
 
 pub struct RenderJobExtractContext {
     pub world: &'static World,
@@ -74,7 +74,7 @@ impl RenderJobWriteContext {
     }
 
     pub fn from_graph_visit_render_pass_args(
-        visit_renderpass_args: &VisitRenderpassArgs
+        visit_renderpass_args: &VisitRenderpassNodeArgs
     ) -> RenderJobWriteContext {
         RenderJobWriteContext::new(
             visit_renderpass_args.graph_context.device_context().clone(),

@@ -20,7 +20,7 @@ use gltf::{animation::util::ReadOutputs, image::Data as GltfImageData};
 use gltf::{animation::Interpolation, buffer::Data as GltfBufferData};
 use itertools::Itertools;
 use rafx::{assets::assets::BufferAssetData, resources::{VertexData, VertexDataLayout, VertexDataSet, VertexMember, vk_description::{Format, size_of_vertex_format}}};
-use rafx::assets::assets::{ColorSpace, ImageAssetData};
+use rafx::assets::assets::{ImageAssetColorSpace, ImageAssetData};
 use rafx::assets::assets::{MaterialInstanceAssetData, MaterialInstanceSlotAssignment};
 use rafx::assets::push_buffer::PushBuffer;
 use rafx::assets::BufferAsset;
@@ -350,7 +350,7 @@ impl Importer for GltfImporter {
                 image: None,
                 sampler: None,
                 buffer_data: Some(
-                    rafx::vulkan::util::any_as_bytes(&material_data_shader_param).into(),
+                    rafx::api_vulkan::util::any_as_bytes(&material_data_shader_param).into(),
                 ),
             });
 
@@ -763,7 +763,7 @@ fn extract_images_to_import(
     doc: &gltf::Document,
     _buffers: &[GltfBufferData],
     images: &[GltfImageData],
-    image_color_space_assignments: &FnvHashMap<usize, ColorSpace>,
+    image_color_space_assignments: &FnvHashMap<usize, ImageAssetColorSpace>,
 ) -> Vec<ImageToImport> {
     let mut images_to_import = Vec::with_capacity(images.len());
     for image in doc.images() {
@@ -831,7 +831,7 @@ fn extract_images_to_import(
 
         let color_space = *image_color_space_assignments
             .get(&image.index())
-            .unwrap_or(&ColorSpace::Linear);
+            .unwrap_or(&ImageAssetColorSpace::Linear);
         log::info!(
             "Choosing color space {:?} for image index {}",
             color_space,
@@ -870,35 +870,45 @@ fn extract_images_to_import(
 
 fn build_image_color_space_assignments_from_materials(
     doc: &gltf::Document
-) -> FnvHashMap<usize, ColorSpace> {
+) -> FnvHashMap<usize, ImageAssetColorSpace> {
     let mut image_color_space_assignments = FnvHashMap::default();
 
     for material in doc.materials() {
         let pbr_metallic_roughness = &material.pbr_metallic_roughness();
 
         if let Some(texture) = pbr_metallic_roughness.base_color_texture() {
-            image_color_space_assignments
-                .insert(texture.texture().source().index(), ColorSpace::Srgb);
+            image_color_space_assignments.insert(
+                texture.texture().source().index(),
+                ImageAssetColorSpace::Srgb,
+            );
         }
 
         if let Some(texture) = pbr_metallic_roughness.metallic_roughness_texture() {
-            image_color_space_assignments
-                .insert(texture.texture().source().index(), ColorSpace::Linear);
+            image_color_space_assignments.insert(
+                texture.texture().source().index(),
+                ImageAssetColorSpace::Linear,
+            );
         }
 
         if let Some(texture) = material.normal_texture() {
-            image_color_space_assignments
-                .insert(texture.texture().source().index(), ColorSpace::Linear);
+            image_color_space_assignments.insert(
+                texture.texture().source().index(),
+                ImageAssetColorSpace::Linear,
+            );
         }
 
         if let Some(texture) = material.occlusion_texture() {
-            image_color_space_assignments
-                .insert(texture.texture().source().index(), ColorSpace::Srgb);
+            image_color_space_assignments.insert(
+                texture.texture().source().index(),
+                ImageAssetColorSpace::Srgb,
+            );
         }
 
         if let Some(texture) = material.emissive_texture() {
-            image_color_space_assignments
-                .insert(texture.texture().source().index(), ColorSpace::Srgb);
+            image_color_space_assignments.insert(
+                texture.texture().source().index(),
+                ImageAssetColorSpace::Srgb,
+            );
         }
     }
 

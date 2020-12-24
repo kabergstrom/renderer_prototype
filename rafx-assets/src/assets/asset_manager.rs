@@ -1,25 +1,26 @@
 use crate::assets::ImageAssetData;
 use crate::assets::ShaderAssetData;
 use crate::assets::{
-    BufferAsset, ImageAsset, MaterialAsset, MaterialInstanceAsset, MaterialPass, PipelineAsset,
-    RenderpassAsset, SamplerAsset, ShaderAsset,
+    BufferAsset, GraphicsPipelineAsset, ImageAsset, MaterialAsset, MaterialInstanceAsset,
+    MaterialPass, RenderpassAsset, SamplerAsset, ShaderAsset,
 };
 use crate::assets::{
-    MaterialAssetData, MaterialInstanceAssetData, PipelineAssetData, RenderpassAssetData,
+    GraphicsPipelineAssetData, MaterialAssetData, MaterialInstanceAssetData, RenderpassAssetData,
 };
 use crate::{
-    AssetLookup, AssetLookupSet, BufferAssetData, GenericLoader, LoadQueues,
-    MaterialInstanceSlotAssignment, SamplerAssetData, SlotNameLookup,
+    AssetLookup, AssetLookupSet, BufferAssetData, ComputePipelineAsset, ComputePipelineAssetData,
+    GenericLoader, LoadQueues, MaterialInstanceSlotAssignment, SamplerAssetData, SlotNameLookup,
+    UploadQueueConfig,
 };
 use ash::prelude::*;
 use atelier_assets::loader::handle::Handle;
+use rafx_api_vulkan::{VkBuffer, VkDeviceContext, VkImage};
 use rafx_resources::{
-    vk_description as dsc, DescriptorSetAllocatorMetrics, DescriptorSetAllocatorProvider,
-    DescriptorSetAllocatorRef, DescriptorSetLayoutResource, DescriptorSetWriteSet,
-    DynResourceAllocatorSet, GraphicsPipelineCache, MaterialPassResource, ResourceArc,
+    vk_description as dsc, ComputePipelineResource, DescriptorSetAllocatorMetrics,
+    DescriptorSetAllocatorProvider, DescriptorSetAllocatorRef, DescriptorSetLayoutResource,
+    DescriptorSetWriteSet, DynResourceAllocatorSet, GraphicsPipelineCache, MaterialPassResource,
+    ResourceArc,
 };
-use rafx_shell_vulkan::{VkBuffer, VkDeviceContext, VkImage};
-use std::mem::ManuallyDrop;
 
 use super::asset_lookup::LoadedAssetMetrics;
 use super::load_queue::LoadQueueSet;
@@ -35,6 +36,7 @@ use rafx_resources::descriptor_sets::{
     DescriptorSetElementKey, DescriptorSetWriteElementBuffer, DescriptorSetWriteElementBufferData,
     DescriptorSetWriteElementImage,
 };
+use rafx_resources::vk_description::ShaderModuleMeta;
 use rafx_resources::DescriptorSetAllocator;
 use rafx_resources::DynCommandWriterAllocator;
 use rafx_resources::DynResourceAllocatorSetProvider;
@@ -51,7 +53,8 @@ pub struct AssetManagerMetrics {
 
 pub struct AssetManagerLoaders {
     pub shader_loader: GenericLoader<ShaderAssetData, ShaderAsset>,
-    pub pipeline_loader: GenericLoader<PipelineAssetData, PipelineAsset>,
+    pub graphics_pipeline_loader: GenericLoader<GraphicsPipelineAssetData, GraphicsPipelineAsset>,
+    pub compute_pipeline_loader: GenericLoader<ComputePipelineAssetData, ComputePipelineAsset>,
     pub renderpass_loader: GenericLoader<RenderpassAssetData, RenderpassAsset>,
     pub material_loader: GenericLoader<MaterialAssetData, MaterialAsset>,
     pub material_instance_loader: GenericLoader<MaterialInstanceAssetData, MaterialInstanceAsset>,
@@ -73,6 +76,7 @@ impl AssetManager {
         device_context: &VkDeviceContext,
         render_registry: &RenderRegistry,
         loader: &Loader,
+        upload_queue_config: UploadQueueConfig,
     ) -> Self {
         let resource_manager = ResourceManager::new(device_context, render_registry);
 
@@ -80,7 +84,7 @@ impl AssetManager {
             resource_manager,
             loaded_assets: AssetLookupSet::new(loader),
             load_queues: Default::default(),
-            upload_manager: UploadManager::new(device_context),
+            upload_manager: UploadManager::new(device_context, upload_queue_config),
             material_instance_descriptor_sets: DescriptorSetAllocator::new(device_context),
         }
     }
@@ -147,8 +151,16 @@ impl AssetManager {
         self.load_queues.shader_modules.create_loader()
     }
 
-    fn create_pipeline_loader(&self) -> GenericLoader<PipelineAssetData, PipelineAsset> {
+    fn create_graphics_pipeline_loader(
+        &self
+    ) -> GenericLoader<GraphicsPipelineAssetData, GraphicsPipelineAsset> {
         self.load_queues.graphics_pipelines.create_loader()
+    }
+
+    fn create_compute_pipeline_loader(
+        &self
+    ) -> GenericLoader<ComputePipelineAssetData, ComputePipelineAsset> {
+        self.load_queues.compute_pipelines.create_loader()
     }
 
     fn create_renderpass_loader(&self) -> GenericLoader<RenderpassAssetData, RenderpassAsset> {
@@ -180,7 +192,8 @@ impl AssetManager {
     pub fn create_loaders(&self) -> AssetManagerLoaders {
         AssetManagerLoaders {
             shader_loader: self.create_shader_loader(),
-            pipeline_loader: self.create_pipeline_loader(),
+            graphics_pipeline_loader: self.create_graphics_pipeline_loader(),
+            compute_pipeline_loader: self.create_compute_pipeline_loader(),
             renderpass_loader: self.create_renderpass_loader(),
             material_loader: self.create_material_loader(),
             material_instance_loader: self.create_material_instance_loader(),
@@ -214,6 +227,16 @@ impl AssetManager {
             .map(|x| x.material_pass_resource.clone())
     }
 
+    pub fn get_compute_pipeline(
+        &self,
+        handle: &Handle<ComputePipelineAsset>,
+    ) -> Option<ResourceArc<ComputePipelineResource>> {
+        self.loaded_assets
+            .compute_pipelines
+            .get_committed(handle.load_handle())
+            .and_then(|x| Some(x.compute_pipeline.clone()))
+    }
+
     pub fn get_descriptor_set_layout_for_pass(
         &self,
         handle: &Handle<MaterialAsset>,
@@ -231,7 +254,8 @@ impl AssetManager {
     #[profiling::function]
     pub fn update_asset_loaders(&mut self) -> VkResult<()> {
         self.process_shader_load_requests();
-        self.process_pipeline_load_requests();
+        self.process_graphics_pipeline_load_requests();
+        self.process_compute_pipeline_load_requests();
         self.process_renderpass_load_requests();
         self.process_material_load_requests();
         self.process_material_instance_load_requests();
@@ -293,9 +317,9 @@ impl AssetManager {
     }
 
     #[profiling::function]
-    fn process_pipeline_load_requests(&mut self) {
+    fn process_graphics_pipeline_load_requests(&mut self) {
         for request in self.load_queues.graphics_pipelines.take_load_requests() {
-            log::trace!("Create pipeline {:?}", request.load_handle);
+            log::trace!("Create graphics pipeline {:?}", request.load_handle);
             let loaded_asset = self.load_graphics_pipeline(request.asset);
             Self::handle_load_result(
                 request.load_op,
@@ -312,6 +336,29 @@ impl AssetManager {
         Self::handle_free_requests(
             &mut self.load_queues.graphics_pipelines,
             &mut self.loaded_assets.graphics_pipelines,
+        );
+    }
+
+    #[profiling::function]
+    fn process_compute_pipeline_load_requests(&mut self) {
+        for request in self.load_queues.compute_pipelines.take_load_requests() {
+            log::trace!("Create compute pipeline {:?}", request.load_handle);
+            let loaded_asset = self.load_compute_pipeline(request.asset);
+            Self::handle_load_result(
+                request.load_op,
+                loaded_asset,
+                &mut self.loaded_assets.compute_pipelines,
+                request.result_tx,
+            );
+        }
+
+        Self::handle_commit_requests(
+            &mut self.load_queues.compute_pipelines,
+            &mut self.loaded_assets.compute_pipelines,
+        );
+        Self::handle_free_requests(
+            &mut self.load_queues.compute_pipelines,
+            &mut self.loaded_assets.compute_pipelines,
         );
     }
 
@@ -577,7 +624,7 @@ impl AssetManager {
         &mut self,
         buffer: VkBuffer,
     ) -> VkResult<BufferAsset> {
-        let buffer = self.resources().insert_buffer(ManuallyDrop::new(buffer));
+        let buffer = self.resources().insert_buffer(buffer);
 
         Ok(BufferAsset { buffer })
     }
@@ -617,11 +664,124 @@ impl AssetManager {
     #[profiling::function]
     fn load_graphics_pipeline(
         &mut self,
-        pipeline_asset: PipelineAssetData,
-    ) -> VkResult<PipelineAsset> {
-        Ok(PipelineAsset {
-            pipeline_asset: Arc::new(pipeline_asset),
+        graphics_pipeline_asset_data: GraphicsPipelineAssetData,
+    ) -> VkResult<GraphicsPipelineAsset> {
+        Ok(GraphicsPipelineAsset {
+            pipeline_asset: Arc::new(graphics_pipeline_asset_data),
         })
+    }
+
+    #[profiling::function]
+    fn load_compute_pipeline(
+        &mut self,
+        compute_pipeline_asset_data: ComputePipelineAssetData,
+    ) -> VkResult<ComputePipelineAsset> {
+        //
+        // Get the shader module
+        //
+        let shader_module = self
+            .assets()
+            .shader_modules
+            .get_latest(compute_pipeline_asset_data.shader_module.load_handle())
+            .unwrap();
+        let shader_module_meta = ShaderModuleMeta {
+            entry_name: compute_pipeline_asset_data.entry_name,
+            stage: dsc::ShaderStage::Compute,
+        };
+
+        //
+        // Find the reflection data in the shader module for the given entry point
+        //
+        let reflection_data = shader_module
+            .reflection_data
+            .get(&shader_module_meta.entry_name);
+        let reflection_data = reflection_data.ok_or_else(|| {
+            log::error!(
+                "Load Compute Shader Failed - Pass refers to entry point named {}, but no matching reflection data was found",
+                shader_module_meta.entry_name
+            );
+            vk::Result::ERROR_UNKNOWN
+        })?;
+
+        //
+        // Create the push constant ranges
+        //
+        let mut push_constant_ranges = vec![];
+        for (range_index, range) in reflection_data.push_constants.iter().enumerate() {
+            log::trace!("    Add range index {} {:?}", range_index, range);
+            push_constant_ranges.push(range.push_constant.clone());
+        }
+
+        //
+        // Gather the descriptor set bindings
+        //
+        let mut descriptor_set_layout_defs = Vec::default();
+        for (set_index, layout) in reflection_data.descriptor_set_layouts.iter().enumerate() {
+            // Expand the layout def to include the given set index
+            while descriptor_set_layout_defs.len() <= set_index {
+                descriptor_set_layout_defs.push(dsc::DescriptorSetLayout::default());
+            }
+
+            if let Some(layout) = layout.as_ref() {
+                for binding in &layout.bindings {
+                    let def = dsc::DescriptorSetLayoutBinding {
+                        binding: binding.binding,
+                        descriptor_type: binding.descriptor_type,
+                        descriptor_count: binding.descriptor_count,
+                        stage_flags: binding.stage_flags,
+                        immutable_samplers: binding.immutable_samplers.clone(),
+                        internal_buffer_per_descriptor_size: binding
+                            .internal_buffer_per_descriptor_size,
+                    };
+
+                    log::trace!(
+                        "    Add descriptor binding set={} binding={} for stage {:?}",
+                        set_index,
+                        binding.binding,
+                        binding.stage_flags
+                    );
+
+                    descriptor_set_layout_defs[set_index]
+                        .descriptor_set_layout_bindings
+                        .push(def);
+                }
+            }
+        }
+
+        //
+        // Create the descriptor set layout
+        //
+        let mut descriptor_set_layouts = Vec::with_capacity(descriptor_set_layout_defs.len());
+
+        for descriptor_set_layout_def in &descriptor_set_layout_defs {
+            let descriptor_set_layout = self
+                .resources()
+                .get_or_create_descriptor_set_layout(&descriptor_set_layout_def)?;
+            descriptor_set_layouts.push(descriptor_set_layout);
+        }
+
+        //
+        // Create the pipeline layout
+        //
+        let pipeline_layout_def = dsc::PipelineLayout {
+            descriptor_set_layouts: descriptor_set_layout_defs,
+            push_constant_ranges,
+        };
+
+        let pipeline_layout = self
+            .resources()
+            .get_or_create_pipeline_layout(&pipeline_layout_def)?;
+
+        //
+        // Create the compute pipeline
+        //
+        let compute_pipeline = self.resources().get_or_create_compute_pipeline(
+            shader_module.shader_module.clone(),
+            shader_module_meta,
+            pipeline_layout,
+        )?;
+
+        Ok(ComputePipelineAsset { compute_pipeline })
     }
 
     #[profiling::function]
@@ -783,7 +943,6 @@ impl AssetManager {
                     .elements
                     .get_mut(&DescriptorSetElementKey {
                         dst_binding: location.binding_index,
-                        //dst_array_element: location.array_index
                     })
                     .unwrap();
 

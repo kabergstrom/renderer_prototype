@@ -17,22 +17,21 @@ use atelier_assets::loader::{
     packfile_io::PackfileReader, storage::DefaultIndirectionResolver, Loader, RpcIO,
 };
 use legion::Resources;
-use rafx::assets::AssetManager;
+use rafx::api_vulkan::{
+    LogicalSize, VkContext, VkContextBuilder, VkDeviceContext, VkSurface, VulkanLinkMethod,
+};
+use rafx::assets::{AssetManager, ComputePipelineAsset, ComputePipelineAssetData};
 use rafx::assets::{
-    BufferAsset, ImageAsset, MaterialAsset, MaterialInstanceAsset, PipelineAsset, RenderpassAsset,
-    ShaderAsset,
+    BufferAsset, GraphicsPipelineAsset, ImageAsset, MaterialAsset, MaterialInstanceAsset,
+    RenderpassAsset, ShaderAsset,
 };
 use rafx::assets::{
-    BufferAssetData, ImageAssetData, MaterialAssetData, MaterialInstanceAssetData,
-    PipelineAssetData, RenderpassAssetData, ShaderAssetData,
+    BufferAssetData, GraphicsPipelineAssetData, ImageAssetData, MaterialAssetData,
+    MaterialInstanceAssetData, RenderpassAssetData, ShaderAssetData,
 };
 use rafx::nodes::RenderRegistry;
 use rafx::visibility::{DynamicVisibilityNodeSet, StaticVisibilityNodeSet};
-use rafx::vulkan::{
-    LogicalSize, MsaaLevel, VkContext, VkContextBuilder, VkDeviceContext, VkSurface,
-    VulkanLinkMethod,
-};
-use rafx_shell_vulkan_sdl2::Sdl2Window;
+use rafx_api_vulkan_sdl2::Sdl2Window;
 
 pub fn atelier_init_daemon(
     resources: &mut Resources,
@@ -127,8 +126,6 @@ pub fn rendering_init(
     let context = VkContextBuilder::new()
         .link_method(link_method)
         .use_vulkan_debug_layer(use_vulkan_debug_layer)
-        .msaa_level_priority(vec![MsaaLevel::Sample4])
-        //.msaa_level_priority(vec![MsaaLevel::Sample1])
         .prefer_mailbox_present_mode();
 
     let render_registry = rafx::nodes::RenderRegistryBuilder::default()
@@ -152,15 +149,25 @@ pub fn rendering_init(
             &device_context,
             &render_registry,
             asset_resource.loader(),
+            rafx::assets::UploadQueueConfig {
+                max_concurrent_uploads: 4,
+                max_new_uploads_in_single_frame: 4,
+                max_bytes_per_upload: 32 * 1024 * 1024,
+            },
         );
         let loaders = asset_manager.create_loaders();
 
         asset_resource.add_storage_with_loader::<ShaderAssetData, ShaderAsset, _>(Box::new(
             ResourceAssetLoader(loaders.shader_loader),
         ));
-        asset_resource.add_storage_with_loader::<PipelineAssetData, PipelineAsset, _>(Box::new(
-            ResourceAssetLoader(loaders.pipeline_loader),
-        ));
+        asset_resource
+            .add_storage_with_loader::<GraphicsPipelineAssetData, GraphicsPipelineAsset, _>(
+                Box::new(ResourceAssetLoader(loaders.graphics_pipeline_loader)),
+            );
+        asset_resource
+            .add_storage_with_loader::<ComputePipelineAssetData, ComputePipelineAsset, _>(
+                Box::new(ResourceAssetLoader(loaders.compute_pipeline_loader)),
+            );
         asset_resource.add_storage_with_loader::<RenderpassAssetData, RenderpassAsset, _>(
             Box::new(ResourceAssetLoader(loaders.renderpass_loader)),
         );

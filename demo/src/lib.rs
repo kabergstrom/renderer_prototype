@@ -1,28 +1,23 @@
 // There's a decent amount of code that's just for example and isn't called
 #![allow(dead_code)]
 
-use std::iter::FromIterator;
-
-use crate::components::{
-    DirectionalLightComponent, PointLightComponent, PositionComponent, SpotLightComponent,
-};
 use crate::imgui_support::Sdl2ImguiManager;
 use assets::gltf::{AnimationAssetData, MeshAssetData, SkeletonAssetData};
 use fnv::FnvHashMap;
 use game_asset_lookup::MeshAsset;
 use glam::Mat4;
 use legion::*;
-use rafx::vulkan::VkDeviceContext;
-use rafx_shell_vulkan_sdl2::Sdl2Window;
+use rafx::api_vulkan::VkDeviceContext;
+use rafx::api_vulkan_sdl2::Sdl2Window;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseState;
 
 use crate::asset_resource::AssetResource;
 use crate::daemon::AssetDaemonArgs;
-use crate::features::debug3d::DebugDraw3DResource;
 use crate::game_asset_manager::GameAssetManager;
 use crate::game_renderer::GameRenderer;
+use crate::scenes::SceneManager;
 use crate::time::TimeState;
 use rafx::assets::AssetManager;
 use structopt::StructOpt;
@@ -41,8 +36,66 @@ mod imgui_support;
 mod init;
 mod phases;
 mod render_contexts;
-mod test_scene;
+mod scenes;
 mod time;
+
+#[derive(Clone)]
+pub struct RenderOptions {
+    pub enable_msaa: bool,
+    pub enable_hdr: bool,
+    pub enable_bloom: bool,
+    pub blur_pass_count: usize,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        RenderOptions {
+            enable_msaa: true,
+            enable_hdr: true,
+            enable_bloom: true,
+            blur_pass_count: 5,
+        }
+    }
+}
+
+impl RenderOptions {
+    pub fn window(
+        &mut self,
+        ui: &imgui::Ui<'_>,
+    ) -> bool {
+        let mut open = true;
+        //TODO: tweak this and use imgui-inspect
+        imgui::Window::new(imgui::im_str!("Render Options"))
+            //.position([10.0, 25.0], imgui::Condition::FirstUseEver)
+            //.size([600.0, 250.0], imgui::Condition::FirstUseEver)
+            .opened(&mut open)
+            .build(ui, || self.ui(ui));
+        open
+    }
+
+    pub fn ui(
+        &mut self,
+        ui: &imgui::Ui<'_>,
+    ) {
+        ui.checkbox(imgui::im_str!("enable_msaa"), &mut self.enable_msaa);
+        ui.checkbox(imgui::im_str!("enable_hdr"), &mut self.enable_hdr);
+        ui.checkbox(imgui::im_str!("enable_bloom"), &mut self.enable_bloom);
+        let mut blur_pass_count = self.blur_pass_count as i32;
+        ui.drag_int(imgui::im_str!("blur_pass_count"), &mut blur_pass_count)
+            .min(0)
+            .max(10)
+            .build();
+        self.blur_pass_count = blur_pass_count as usize;
+    }
+}
+
+#[derive(Default)]
+pub struct DebugUiState {
+    show_render_options: bool,
+
+    #[cfg(feature = "profile-with-puffin")]
+    show_profiler: bool,
+}
 
 #[derive(StructOpt)]
 pub struct DemoArgs {
@@ -65,6 +118,9 @@ pub fn run(args: &DemoArgs) {
 
     let mut resources = Resources::default();
     resources.insert(TimeState::new());
+    resources.insert(RenderOptions::default());
+    resources.insert(DebugUiState::default());
+    resources.insert(SceneManager::default());
 
     if let Some(packfile) = &args.packfile {
         log::info!("Reading from packfile {:?}", packfile);
@@ -110,17 +166,10 @@ pub fn run(args: &DemoArgs) {
         .expect("Could not create sdl event pump");
 
     let mut world = World::default();
-
-    //test_scene::populate_test_sprite_entities(&mut resources, &mut world);
-    test_scene::populate_test_mesh_entities(&mut resources, &mut world);
-    test_scene::populate_test_lights(&mut resources, &mut world);
-
     let mut print_time_event = crate::time::PeriodicEvent::default();
 
     #[cfg(feature = "profile-with-puffin")]
     let mut profiler_ui = puffin_imgui::ProfilerUi::default();
-    #[cfg(feature = "profile-with-puffin")]
-    profiling::puffin::set_scopes_on(true);
 
     #[cfg(feature = "profile-with-tracy")]
     {
@@ -133,7 +182,16 @@ pub fn run(args: &DemoArgs) {
 
     'running: loop {
         profiling::scope!("Main Loop");
+
+        {
+            resources
+                .get_mut::<SceneManager>()
+                .unwrap()
+                .try_create_next_scene(&mut world, &resources);
+        }
+
         let t0 = std::time::Instant::now();
+
         //
         // Update time
         //
@@ -261,59 +319,12 @@ pub fn run(args: &DemoArgs) {
             break 'running;
         }
 
-        add_light_debug_draw(&resources, &world);
-
-        /*
-                {
-                    let time_state = resources.get::<TimeState>().unwrap();
-                    let mut query = <Write<DirectionalLightComponent>>::query();
-                    for mut light in query.iter_mut(&mut world) {
-                        const LIGHT_XY_DISTANCE: f32 = 50.0;
-                        const LIGHT_Z: f32 = 50.0;
-                        const LIGHT_ROTATE_SPEED: f32 = 0.0;
-                        const LIGHT_LOOP_OFFSET: f32 = 2.0;
-                        let loop_time = time_state.total_time().as_secs_f32();
-                        let light_from = glam::Vec3::new(
-                            LIGHT_XY_DISTANCE
-                                * f32::cos(LIGHT_ROTATE_SPEED * loop_time + LIGHT_LOOP_OFFSET),
-                            LIGHT_XY_DISTANCE
-                                * f32::sin(LIGHT_ROTATE_SPEED * loop_time + LIGHT_LOOP_OFFSET),
-                            LIGHT_Z,
-                            //LIGHT_Z// * f32::sin(LIGHT_ROTATE_SPEED * loop_time + LIGHT_LOOP_OFFSET).abs(),
-                            //0.2
-                            //2.0
-                        );
-                        let light_to = glam::Vec3::default();
-
-                        light.direction = (light_to - light_from).normalize();
-                    }
-                }
-        */
-
-        /*
         {
-            let time_state = resources.get::<TimeState>().unwrap();
-            let mut query = <(Write<PositionComponent>, Read<PointLightComponent>)>::query();
-            for (position, light) in query.iter_mut(&mut world) {
-                const LIGHT_XY_DISTANCE: f32 = 6.0;
-                const LIGHT_Z: f32 = 3.5;
-                const LIGHT_ROTATE_SPEED: f32 = 0.5;
-                const LIGHT_LOOP_OFFSET: f32 = 2.0;
-                let loop_time = time_state.total_time().as_secs_f32();
-                let light_from = glam::Vec3::new(
-                    LIGHT_XY_DISTANCE
-                        * f32::cos(LIGHT_ROTATE_SPEED * loop_time + LIGHT_LOOP_OFFSET),
-                    LIGHT_XY_DISTANCE
-                        * f32::sin(LIGHT_ROTATE_SPEED * loop_time + LIGHT_LOOP_OFFSET),
-                    LIGHT_Z,
-                    //LIGHT_Z// * f32::sin(LIGHT_ROTATE_SPEED * loop_time + LIGHT_LOOP_OFFSET).abs(),
-                    //0.2
-                    //2.0
-                );
-                position.position = light_from;
-            }
+            resources
+                .get_mut::<SceneManager>()
+                .unwrap()
+                .update_scene(&mut world, &resources);
         }
-        */
 
         //
         // imgui debug draw,
@@ -322,21 +333,45 @@ pub fn run(args: &DemoArgs) {
             profiling::scope!("imgui");
             let imgui_manager = resources.get::<Sdl2ImguiManager>().unwrap();
             let time_state = resources.get::<TimeState>().unwrap();
+            let mut debug_ui_state = resources.get_mut::<DebugUiState>().unwrap();
+            let mut render_options = resources.get_mut::<RenderOptions>().unwrap();
             imgui_manager.with_ui(|ui| {
-                {
-                    profiling::scope!("main menu bar");
-                    ui.main_menu_bar(|| {
-                        ui.text(imgui::im_str!(
-                            "FPS: {:.1}",
-                            time_state.updates_per_second_smoothed()
-                        ));
-                        ui.separator();
-                        ui.text(imgui::im_str!("Frame: {}", time_state.update_count()));
+                profiling::scope!("main menu bar");
+                ui.main_menu_bar(|| {
+                    ui.menu(imgui::im_str!("Windows"), true, || {
+                        ui.checkbox(
+                            imgui::im_str!("Render Options"),
+                            &mut debug_ui_state.show_render_options,
+                        );
+
+                        #[cfg(feature = "profile-with-puffin")]
+                        if ui.checkbox(
+                            imgui::im_str!("Profiler"),
+                            &mut debug_ui_state.show_profiler,
+                        ) {
+                            log::info!(
+                                "Setting puffin profiler enabled: {:?}",
+                                debug_ui_state.show_profiler
+                            );
+                            profiling::puffin::set_scopes_on(debug_ui_state.show_profiler);
+                        }
+                    });
+                    ui.text(imgui::im_str!(
+                        "FPS: {:.1}",
+                        time_state.updates_per_second_smoothed()
+                    ));
+                    ui.separator();
+                    ui.text(imgui::im_str!("Frame: {}", time_state.update_count()));
+                });
+
+                if debug_ui_state.show_render_options {
+                    imgui::Window::new(imgui::im_str!("Render Options")).build(ui, || {
+                        render_options.window(ui);
                     });
                 }
 
                 #[cfg(feature = "profile-with-puffin")]
-                {
+                if debug_ui_state.show_profiler {
                     profiling::scope!("puffin profiler");
                     profiler_ui.window(ui);
                 }
@@ -381,46 +416,12 @@ pub fn run(args: &DemoArgs) {
     init::rendering_destroy(&mut resources);
 }
 
-fn add_light_debug_draw(
-    resources: &Resources,
-    world: &World,
-) {
-    let mut debug_draw = resources.get_mut::<DebugDraw3DResource>().unwrap();
-
-    let mut query = <Read<DirectionalLightComponent>>::query();
-    for light in query.iter(world) {
-        let light_from = light.direction * -10.0;
-        let light_to = glam::Vec3::zero();
-
-        debug_draw.add_line(light_from, light_to, light.color);
-    }
-
-    let mut query = <(Read<PositionComponent>, Read<PointLightComponent>)>::query();
-    for (position, light) in query.iter(world) {
-        debug_draw.add_sphere(position.position, 0.25, light.color, 12);
-    }
-
-    let mut query = <(Read<PositionComponent>, Read<SpotLightComponent>)>::query();
-    for (position, light) in query.iter(world) {
-        let light_from = position.position;
-        let light_to = position.position + light.direction;
-        let light_direction = (light_to - light_from).normalize();
-
-        debug_draw.add_cone(
-            light_from,
-            light_from + (light.range * light_direction),
-            light.range * light.spotlight_half_angle.tan(),
-            light.color,
-            10,
-        );
-    }
-}
-
 fn process_input(
     resources: &Resources,
     event_pump: &mut sdl2::EventPump,
 ) -> bool {
     let imgui_manager = resources.get::<Sdl2ImguiManager>().unwrap();
+    let mut scene_manager = resources.get_mut::<SceneManager>().unwrap();
     for event in event_pump.poll_iter() {
         imgui_manager.handle_event(&event);
         if !imgui_manager.ignore_event(&event) {
@@ -452,6 +453,14 @@ fn process_input(
                             .calculate_stats()
                             .unwrap();
                         println!("{:#?}", stats);
+                    }
+
+                    if keycode == Keycode::Left {
+                        scene_manager.queue_load_previous_scene();
+                    }
+
+                    if keycode == Keycode::Right {
+                        scene_manager.queue_load_next_scene();
                     }
 
                     if keycode == Keycode::M {

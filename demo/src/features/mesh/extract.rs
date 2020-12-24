@@ -16,9 +16,12 @@ use rafx::base::slab::RawSlabKey;
 use rafx::nodes::{
     ExtractJob, FramePacket, PrepareJob, RenderFeature, RenderFeatureIndex, RenderView,
 };
+use rafx::resources::{ImageViewResource, ResourceArc};
 
 pub struct MeshExtractJob {
     pub(super) shadow_map_data: ShadowMapData,
+    pub(super) invalid_image: ResourceArc<ImageViewResource>,
+    pub(super) invalid_cube_map_image: ResourceArc<ImageViewResource>,
 }
 
 impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWriteContext>
@@ -47,8 +50,8 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
             .resources
             .get_mut::<MeshRenderNodeSet>()
             .unwrap();
-        let mut query = <(Read<PositionComponent>, Read<MeshComponent>)>::query();
 
+        let mut query = <(Read<PositionComponent>, Read<MeshComponent>)>::query();
         for (position_component, mesh_component) in query.iter(extract_context.world) {
             let render_node = mesh_render_nodes
                 .get_mut(&mesh_component.render_node)
@@ -131,6 +134,8 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
             shadow_map_data: self.shadow_map_data,
             point_lights,
             spot_lights,
+            invalid_image: self.invalid_image,
+            invalid_cube_map_image: self.invalid_cube_map_image,
         })
     }
 }

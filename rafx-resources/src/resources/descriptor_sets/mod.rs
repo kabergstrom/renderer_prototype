@@ -40,7 +40,7 @@ pub use descriptor_set_allocator_manager::DescriptorSetAllocatorProvider;
 pub use descriptor_set_allocator_manager::DescriptorSetAllocatorRef;
 
 const MAX_DESCRIPTORS_PER_POOL: u32 = 64;
-const MAX_FRAMES_IN_FLIGHT: usize = rafx_shell_vulkan::MAX_FRAMES_IN_FLIGHT;
+const MAX_FRAMES_IN_FLIGHT: usize = rafx_api_vulkan::MAX_FRAMES_IN_FLIGHT;
 const MAX_FRAMES_IN_FLIGHT_PLUS_1: usize = MAX_FRAMES_IN_FLIGHT + 1;
 
 // A set of write to buffers that back a descriptor set
@@ -95,6 +95,9 @@ pub fn what_to_bind(element_write: &DescriptorSetElementWrite) -> WhatToBind {
             what.bind_images = true;
         }
         dsc::DescriptorType::UniformBuffer => {
+            what.bind_buffers = true;
+        }
+        dsc::DescriptorType::StorageBuffer => {
             what.bind_buffers = true;
         }
         _ => unimplemented!(),

@@ -51,6 +51,7 @@ mod upload;
 pub use upload::VkTransferUpload;
 pub use upload::VkTransferUploadState;
 pub use upload::VkUpload;
+pub use upload::VkUploadError;
 pub use upload::VkUploadState;
 
 mod debug_reporter;
@@ -79,6 +80,21 @@ pub use entry::MoltenEntry;
 pub use entry::VkEntry;
 
 //mod fence;
+
+// If using an SDR format, consider using the swapchain surface format!
+pub const DEFAULT_COLOR_FORMATS_SDR: [vk::Format; 1] = [
+    vk::Format::R8G8B8A8_SNORM, // 100% coverage with optimal
+];
+
+pub const DEFAULT_COLOR_FORMATS_HDR: [vk::Format; 1] = [
+    vk::Format::R32G32B32A32_SFLOAT, // 100% coverage with optimal
+];
+
+pub const DEFAULT_DEPTH_FORMATS: [vk::Format; 3] = [
+    vk::Format::D32_SFLOAT,         // 100% coverage with optimal
+    vk::Format::D32_SFLOAT_S8_UINT, // 100% coverage with optimal
+    vk::Format::D24_UNORM_S8_UINT,
+];
 
 #[derive(Copy, Clone, Debug)]
 pub enum VulkanLinkMethod {

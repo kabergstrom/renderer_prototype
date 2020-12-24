@@ -1,10 +1,11 @@
 use crate::game_renderer::GameRendererInner;
 use ash::prelude::VkResult;
+use ash::vk;
+use rafx::api_vulkan::VkImageRaw;
+use rafx::api_vulkan::{SwapchainInfo, VkDeviceContext, VkSwapchain};
 use rafx::resources::vk_description as dsc;
 use rafx::resources::vk_description::SwapchainSurfaceInfo;
 use rafx::resources::{ImageViewResource, ResourceArc, ResourceManager};
-use rafx::vulkan::VkImageRaw;
-use rafx::vulkan::{SwapchainInfo, VkDeviceContext, VkSwapchain};
 
 pub struct SwapchainResources {
     // The images presented by the swapchain
@@ -14,11 +15,15 @@ pub struct SwapchainResources {
 
     pub swapchain_info: SwapchainInfo,
     pub swapchain_surface_info: SwapchainSurfaceInfo,
+
+    pub default_color_format_hdr: vk::Format,
+    pub default_color_format_sdr: vk::Format,
+    pub default_depth_format: vk::Format,
 }
 
 impl SwapchainResources {
     pub fn new(
-        _device_context: &VkDeviceContext,
+        device_context: &VkDeviceContext,
         swapchain: &VkSwapchain,
         _game_renderer: &mut GameRendererInner,
         resource_manager: &mut ResourceManager,
@@ -26,6 +31,23 @@ impl SwapchainResources {
         swapchain_surface_info: SwapchainSurfaceInfo,
     ) -> VkResult<SwapchainResources> {
         log::debug!("creating swapchain resources");
+
+        //
+        // Determine default color formats
+        //
+        let default_color_format_hdr = rafx::api_vulkan::VkSwapchain::choose_supported_format(
+            &device_context,
+            &rafx::api_vulkan::DEFAULT_COLOR_FORMATS_HDR,
+            vk::FormatFeatureFlags::COLOR_ATTACHMENT,
+        );
+
+        let default_color_format_sdr = swapchain_surface_info.surface_format.format;
+
+        let default_depth_format = rafx::api_vulkan::VkSwapchain::choose_supported_format(
+            &device_context,
+            &rafx::api_vulkan::DEFAULT_DEPTH_FORMATS,
+            vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
+        );
 
         //
         // Create resources for the swapchain images. This allows renderer systems to use them
@@ -65,6 +87,9 @@ impl SwapchainResources {
             swapchain_images,
             swapchain_info,
             swapchain_surface_info,
+            default_color_format_hdr,
+            default_color_format_sdr,
+            default_depth_format,
         })
     }
 }
