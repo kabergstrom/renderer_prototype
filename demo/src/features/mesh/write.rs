@@ -63,7 +63,7 @@ impl FeatureCommandWriter<RenderJobWriteContext> for MeshCommandWriter {
                     &render_node_data.material_pass.material_pass_resource,
                     &write_context.renderpass,
                     &write_context.framebuffer_meta,
-                    &*crate::assets::gltf::MESH_VERTEX_LAYOUT,
+                    &mesh_part.vertex_layouts,
                 )
                 .unwrap();
 
@@ -108,35 +108,39 @@ impl FeatureCommandWriter<RenderJobWriteContext> for MeshCommandWriter {
                 &[],
             );
 
-            logical_device.cmd_bind_vertex_buffers(
-                command_buffer,
-                0, // first binding
-                &[frame_node_data
-                    .mesh_asset
-                    .inner
-                    .vertex_buffer
-                    .get_raw()
-                    .buffer
-                    .buffer],
-                &[mesh_part.vertex_buffer_offset_in_bytes as u64], // offsets
-            );
+            for (binding, offset) in mesh_part.vertex_binding_buffer_offsets.iter().enumerate() {
+                logical_device.cmd_bind_vertex_buffers(
+                    command_buffer,
+                    binding as u32, // first binding
+                    &[frame_node_data
+                        .mesh_asset
+                        .inner
+                        .vertex_buffer
+                        .get_raw()
+                        .buffer
+                        .buffer],
+                    &[*offset as u64], // offsets
+                );
+            }
 
+
+            let index_buffer_offset = mesh_part.index_buffer_offset;
             logical_device.cmd_bind_index_buffer(
                 command_buffer,
                 frame_node_data
                     .mesh_asset
                     .inner
-                    .index_buffer
+                    .vertex_buffer
                     .get_raw()
                     .buffer
                     .buffer,
-                mesh_part.index_buffer_offset_in_bytes as u64, // offset
+                index_buffer_offset as u64, // offset
                 vk::IndexType::UINT16,
             );
 
             logical_device.cmd_draw_indexed(
                 command_buffer,
-                mesh_part.index_buffer_size_in_bytes / 2, //sizeof(u16)
+                mesh_part.num_indices as u32, //sizeof(u16)
                 1,
                 0,
                 0,

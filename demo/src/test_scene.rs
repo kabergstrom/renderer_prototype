@@ -14,10 +14,7 @@ use legion::{Resources, World};
 use rafx::assets::ImageAsset;
 use rafx::visibility::{DynamicAabbVisibilityNode, DynamicVisibilityNodeSet};
 
-pub fn populate_test_sprite_entities(
-    resources: &mut Resources,
-    world: &mut World,
-) {
+pub fn populate_test_sprite_entities(resources: &mut Resources, world: &mut World) {
     let sprite_image = {
         let asset_resource = resources.get::<AssetResource>().unwrap();
         //asset_resource.load_asset_path::<ImageAsset, _>("textures/texture2.jpg")
@@ -157,6 +154,42 @@ pub fn populate_test_mesh_entities(
             world.extend((0..1).map(|_| (position_component, mesh_component.clone())));
         }
     }
+
+    //
+    // Add skinned cylinder
+    //
+    // {
+    //     let cylinder = {
+    //         let asset_resource = resources.get::<AssetResource>().unwrap();
+
+    //         // container1
+    //         asset_resource.load_asset_path("blender/03_skinned_cylinder.gltf")
+    //     };
+
+    //     let position = Vec3::new(12.0, 12.0, 0.0);
+
+    //     let render_node = mesh_render_nodes.register_mesh(MeshRenderNode {
+    //         transform: glam::Mat4::from_translation(position),
+    //         mesh: Some(cylinder.clone()),
+    //     });
+
+    //     // User calls functions to register visibility objects
+    //     // - This is a retained API because presumably we don't want to rebuild spatial structures every frame
+    //     let visibility_node =
+    //         dynamic_visibility_node_set.register_dynamic_aabb(DynamicAabbVisibilityNode {
+    //             handle: render_node.as_raw_generic_handle(),
+    //             // aabb bounds
+    //         });
+
+    //     let position_component = PositionComponent { position };
+    //     let mesh_component = MeshComponent {
+    //         render_node,
+    //         visibility_node,
+    //         mesh: Some(cylinder.clone()),
+    //     };
+
+    //     world.extend((0..1).map(|_| (position_component, mesh_component.clone())));
+    // }
 }
 
 pub fn populate_test_lights(

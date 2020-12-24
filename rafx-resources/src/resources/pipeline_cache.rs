@@ -270,7 +270,7 @@ impl GraphicsPipelineCache {
             vertex_data_set_layout,
             true,
         )
-        .ok_or(vk::Result::ERROR_UNKNOWN)?
+        .unwrap_or(Err(vk::Result::ERROR_UNKNOWN))
     }
 
     pub fn graphics_pipeline(
@@ -323,6 +323,8 @@ impl GraphicsPipelineCache {
                     for vertex_input in &*material_pass.get_raw().material_pass_key.vertex_inputs {
                         let member = vertex_data_set_layout
                             .member(&vertex_input.semantic)
+                            .or_else(|| vertex_data_set_layout
+                                .member(&format!("{}0", vertex_input.semantic)))
                             .ok_or_else(|| {
                                 log::error!(
                                     "Vertex data does not support this material. Missing data {}",

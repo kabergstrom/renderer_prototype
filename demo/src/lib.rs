@@ -1,10 +1,16 @@
 // There's a decent amount of code that's just for example and isn't called
 #![allow(dead_code)]
 
+use std::iter::FromIterator;
+
 use crate::components::{
     DirectionalLightComponent, PointLightComponent, PositionComponent, SpotLightComponent,
 };
 use crate::imgui_support::Sdl2ImguiManager;
+use assets::gltf::{AnimationAssetData, MeshAssetData, SkeletonAssetData};
+use fnv::FnvHashMap;
+use game_asset_lookup::MeshAsset;
+use glam::Mat4;
 use legion::*;
 use rafx::vulkan::VkDeviceContext;
 use rafx_shell_vulkan_sdl2::Sdl2Window;
@@ -86,6 +92,16 @@ pub fn run(args: &DemoArgs) {
     let sdl2_systems = init::sdl2_init();
     init::imgui_init(&mut resources, &sdl2_systems.window);
     init::rendering_init(&mut resources, &sdl2_systems.window);
+    // let (mesh, skeleton, animation) = {
+    //     let asset_resource = resources.get::<AssetResource>().unwrap();
+    //     let skeleton = asset_resource
+    //         .load_asset_path::<SkeletonAssetData, _>("blender/03_skinned_cylinder.gltf");
+    //     let animation = asset_resource
+    //         .load_asset_path::<AnimationAssetData, _>("blender/03_skinned_cylinder.gltf");
+    //     let mesh =
+    //         asset_resource.load_asset_path::<MeshAsset, _>("blender/03_skinned_cylinder.gltf");
+    //     (mesh, skeleton, animation)
+    // };
 
     log::info!("Starting window event loop");
     let mut event_pump = sdl2_systems
@@ -154,6 +170,74 @@ pub fn run(args: &DemoArgs) {
             profiling::scope!("update asset resource");
             let mut asset_resource = resources.get_mut::<AssetResource>().unwrap();
             asset_resource.update();
+            // if let Some(mesh) = asset_resource.asset(&mesh) {
+            //     if let Some(skeleton) = asset_resource.asset(&skeleton) {
+            //         let mut skeleton_joints =
+            //             Vec::from_iter(skeleton.joints.iter().map(|j| j.inverse_bind_matrix));
+            //         if let Some(animation) = asset_resource.asset(&animation) {
+            //             let mut val = 0.0;
+            //             while val <= 2.0 {
+            //                 for joint_tracks in &animation.joint_tracks {
+            //                     let joint_idx = skeleton
+            //                         .joints
+            //                         .iter()
+            //                         .position(|joint| joint.name == joint_tracks.target_joint)
+            //                         .unwrap_or_else(|| {
+            //                             panic!("could not find joint {}", joint_tracks.target_joint)
+            //                         });
+            //                     let joint = &mut skeleton_joints[joint_idx];
+            //                     let mut pos = glam::Vec3::default();
+            //                     let mut scale = glam::Vec3::default();
+            //                     let mut rot = glam::Quat::identity();
+
+            //                     for joint_track in &joint_tracks.tracks {
+            //                         joint_track.sample(val, 1.0, &mut pos, &mut rot, &mut scale);
+            //                     }
+            //                     // println!(
+            //                     //     "t: {} joint {} pos {:?} scale {:?} rot {:?}",
+            //                     //     val, skeleton.joints[joint_idx].name, pos, scale, rot
+            //                     // );
+            //                     *joint = joint.mul_mat4(
+            //                         &glam::Mat4::from_scale_rotation_translation(scale, rot, pos),
+            //                     );
+            //                     // println!(
+            //                     //     "t: {} joint {} world: {:?}",
+            //                     //     val, skeleton.joints[joint_idx].name, *joint
+            //                     // );
+            //                 }
+            //                 val += 0.5;
+            //             }
+            //         }
+            //         for part in &mesh.inner.asset_data.mesh_parts {
+            //             if let Some(skin_joint_names) = &part.skin_joint_names {
+            //                 let mut remapping = Vec::new();
+            //                 for (mesh_joint_idx, mesh_joint) in skin_joint_names.iter().enumerate()
+            //                 {
+            //                     if let Some(skeleton_idx) = skeleton
+            //                         .joints
+            //                         .iter()
+            //                         .position(|joint| mesh_joint == &joint.name)
+            //                     {
+            //                         remapping.push((skeleton_idx, mesh_joint_idx));
+            //                     }
+            //                 }
+            //                 let need_remapping = remapping.iter().any(|(src, dst)| src != dst);
+
+            //                 let mut mesh_part_joint_matrices = Vec::new();
+            //                 if need_remapping {
+            //                     mesh_part_joint_matrices
+            //                         .resize(skin_joint_names.len(), Mat4::identity());
+            //                     for (source_idx, target_idx) in remapping {
+            //                         mesh_part_joint_matrices[target_idx] =
+            //                             skeleton_joints[source_idx];
+            //                     }
+            //                 } else {
+            //                     mesh_part_joint_matrices.extend(&skeleton_joints);
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
         }
 
         //

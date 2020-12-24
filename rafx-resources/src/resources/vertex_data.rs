@@ -1,11 +1,12 @@
 use crate::vk_description as dsc;
 use crate::vk_description::Format;
 use fnv::FnvHashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 // Hash of a GPU resource
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VertexDataLayoutHash(u64);
 
 impl VertexDataLayoutHash {
@@ -127,14 +128,14 @@ impl<'a, VertexT: Copy + 'static> VertexMemberAccumulator<'a, VertexT> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash, Serialize, Deserialize)]
 pub struct VertexDataMemberMeta {
     pub format: dsc::Format,
     pub offset: usize,
     pub size: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct VertexDataLayoutInner {
     //TODO: Change strings to hashes
     //TODO: Not clear if hashmap is better than linear or binary search on few elements
@@ -143,7 +144,7 @@ pub struct VertexDataLayoutInner {
     hash: VertexDataLayoutHash,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct VertexDataLayout {
     //TODO: Change strings to hashes
     //TODO: Not clear if hashmap is better than linear or binary search on few elements
@@ -382,12 +383,12 @@ impl VertexDataSetLayout {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct VertexData {
-    layout: VertexDataLayout,
+    pub layout: VertexDataLayout,
     // Align to 16 bytes to try to stay clear of alignment issues
-    data: Vec<u128>,
-    vertex_count: usize,
+    pub data: Vec<u128>,
+    pub vertex_count: usize,
 }
 
 impl VertexData {
@@ -489,6 +490,27 @@ impl VertexData {
                 &self.layout,
                 dst_data,
                 src_data.len(),
+            )
+        }
+    }
+
+    pub fn copy_to_byte_slice(
+        &self,
+        dst_layout: &VertexDataLayout,
+        dst_data: &mut [u8],
+    ) -> Result<(), VertexCopyError> {
+        if dst_data.len() != self.vertex_count * dst_layout.vertex_size() {
+            return Err(VertexCopyError::VertexCountDoesNotMatch);
+        }
+
+        unsafe {
+            let src_data = self.ptr();
+            Self::copy_between_layouts(
+                &self.layout,
+                src_data,
+                dst_layout,
+                dst_data.as_mut_ptr(),
+                self.vertex_count,
             )
         }
     }
@@ -613,6 +635,7 @@ impl VertexData {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct VertexDataSet {
     layouts: Vec<VertexDataLayout>,
     data: Vec<VertexData>,

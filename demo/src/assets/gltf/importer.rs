@@ -1,15 +1,25 @@
-use crate::assets::gltf::{
-    GltfMaterialAsset, GltfMaterialDataShaderParam, MeshAssetData, MeshPartAssetData, MeshVertex,
+use super::{
+    assets::{
+        AnimationAssetData, GltfMaterialAsset, GltfMaterialDataShaderParam, MeshAssetData,
+        MeshPartAssetData, SkeletonAssetData,
+    },
+    AnimTrack, AnimTrackData, InterpolationMode, JointTrackCollection, SkeletonJoint,
 };
-use atelier_assets::core::{AssetRef, AssetUuid};
-use atelier_assets::importer::{Error, ImportedAsset, Importer, ImporterValue};
-use atelier_assets::loader::handle::Handle;
 use atelier_assets::loader::handle::SerdeContext;
+use atelier_assets::{
+    core::{AssetRef, AssetUuid},
+    importer::ImportOp,
+};
+use atelier_assets::{
+    importer::{Error, ImportedAsset, Importer, ImporterValue},
+    make_handle,
+};
+use atelier_assets::{loader::handle::Handle, make_handle_from_str};
 use fnv::FnvHashMap;
-use gltf::buffer::Data as GltfBufferData;
-use gltf::image::Data as GltfImageData;
+use gltf::{animation::util::ReadOutputs, image::Data as GltfImageData};
+use gltf::{animation::Interpolation, buffer::Data as GltfBufferData};
 use itertools::Itertools;
-use rafx::assets::assets::BufferAssetData;
+use rafx::{assets::assets::BufferAssetData, resources::{VertexData, VertexDataLayout, VertexDataSet, VertexMember, vk_description::{Format, size_of_vertex_format}}};
 use rafx::assets::assets::{ColorSpace, ImageAssetData};
 use rafx::assets::assets::{MaterialInstanceAssetData, MaterialInstanceSlotAssignment};
 use rafx::assets::push_buffer::PushBuffer;
@@ -19,7 +29,7 @@ use rafx::assets::MaterialAsset;
 use rafx::assets::MaterialInstanceAsset;
 use serde::export::Formatter;
 use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
+use std::{alloc::Layout, convert::TryInto};
 use std::io::Read;
 use std::str::FromStr;
 use type_uuid::*;
@@ -69,6 +79,16 @@ struct MeshToImport {
     asset: MeshAssetData,
 }
 
+struct AnimationToImport {
+    id: GltfObjectId,
+    asset: AnimationAssetData,
+}
+
+struct SkeletonToImport {
+    id: GltfObjectId,
+    asset: SkeletonAssetData,
+}
+
 struct BufferToImport {
     id: GltfObjectId,
     asset: BufferAssetData,
@@ -84,6 +104,7 @@ struct BufferToImport {
 // The asset state is stored in this format using Vecs
 #[derive(TypeUuid, Serialize, Deserialize, Default, Clone)]
 #[uuid = "807c83b3-c24c-4123-9580-5f9c426260b4"]
+#[serde(default)]
 pub struct GltfImporterStateStable {
     // Asset UUIDs for imported image by name. We use vecs here so we can sort by UUID for
     // deterministic output
@@ -92,6 +113,8 @@ pub struct GltfImporterStateStable {
     material_asset_uuids: Vec<(GltfObjectId, AssetUuid)>,
     material_instance_asset_uuids: Vec<(GltfObjectId, AssetUuid)>,
     mesh_asset_uuids: Vec<(GltfObjectId, AssetUuid)>,
+    animation_asset_uuids: Vec<(GltfObjectId, AssetUuid)>,
+    skeleton_asset_uuids: Vec<(GltfObjectId, AssetUuid)>,
 }
 
 impl From<GltfImporterStateUnstable> for GltfImporterStateStable {
@@ -122,6 +145,16 @@ impl From<GltfImporterStateUnstable> for GltfImporterStateStable {
             .into_iter()
             .sorted_by_key(|(id, _uuid)| id.clone())
             .collect();
+        stable.animation_asset_uuids = other
+            .animation_asset_uuids
+            .into_iter()
+            .sorted_by_key(|(id, _uuid)| id.clone())
+            .collect();
+        stable.skeleton_asset_uuids = other
+            .skeleton_asset_uuids
+            .into_iter()
+            .sorted_by_key(|(id, _uuid)| id.clone())
+            .collect();
         stable
     }
 }
@@ -136,6 +169,8 @@ pub struct GltfImporterStateUnstable {
     material_asset_uuids: FnvHashMap<GltfObjectId, AssetUuid>,
     material_instance_asset_uuids: FnvHashMap<GltfObjectId, AssetUuid>,
     mesh_asset_uuids: FnvHashMap<GltfObjectId, AssetUuid>,
+    animation_asset_uuids: FnvHashMap<GltfObjectId, AssetUuid>,
+    skeleton_asset_uuids: FnvHashMap<GltfObjectId, AssetUuid>,
 }
 
 impl From<GltfImporterStateStable> for GltfImporterStateUnstable {
@@ -147,6 +182,8 @@ impl From<GltfImporterStateStable> for GltfImporterStateUnstable {
         unstable.material_instance_asset_uuids =
             other.material_instance_asset_uuids.into_iter().collect();
         unstable.mesh_asset_uuids = other.mesh_asset_uuids.into_iter().collect();
+        unstable.animation_asset_uuids = other.animation_asset_uuids.into_iter().collect();
+        unstable.skeleton_asset_uuids = other.skeleton_asset_uuids.into_iter().collect();
         unstable
     }
 }
@@ -159,7 +196,7 @@ impl Importer for GltfImporter {
     where
         Self: Sized,
     {
-        24
+        29
     }
 
     fn version(&self) -> u32 {
@@ -173,6 +210,7 @@ impl Importer for GltfImporter {
     /// Reads the given bytes and produces assets.
     fn import(
         &self,
+        op: &mut ImportOp,
         source: &mut dyn Read,
         _options: &Self::Options,
         stable_state: &mut Self::State,
@@ -209,15 +247,9 @@ impl Importer for GltfImporter {
             let image_uuid = *unstable_state
                 .image_asset_uuids
                 .entry(image_to_import.id.clone())
-                .or_insert_with(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+                .or_insert_with(|| op.new_asset_uuid());
 
-            let image_handle = SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
-                let load_handle = loader_info_provider
-                    .get_load_handle(&AssetRef::Uuid(image_uuid))
-                    .unwrap();
-                Handle::<ImageAsset>::new(ref_op_sender.clone(), load_handle)
-            });
-
+            let image_handle = make_handle(image_uuid);
             // Push the UUID into the list so that we have an O(1) lookup for image index to UUID
             image_index_to_handle.push(image_handle);
 
@@ -250,15 +282,9 @@ impl Importer for GltfImporter {
             let material_uuid = *unstable_state
                 .material_asset_uuids
                 .entry(material_to_import.id.clone())
-                .or_insert_with(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+                .or_insert_with(|| op.new_asset_uuid());
 
-            let material_handle =
-                SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
-                    let load_handle = loader_info_provider
-                        .get_load_handle(&AssetRef::Uuid(material_uuid))
-                        .unwrap();
-                    Handle::<GltfMaterialAsset>::new(ref_op_sender.clone(), load_handle)
-                });
+            let material_handle = make_handle(material_uuid);
 
             // Push the UUID into the list so that we have an O(1) lookup for image index to UUID
             material_index_to_handle.push(material_handle);
@@ -291,27 +317,9 @@ impl Importer for GltfImporter {
             });
         }
 
-        let material_handle = SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
-            let material_uuid_str = "92a98639-de0d-40cf-a222-354f616346c3";
-            let material_uuid =
-                AssetUuid(*uuid::Uuid::from_str(material_uuid_str).unwrap().as_bytes());
+        let material_handle = make_handle_from_str("92a98639-de0d-40cf-a222-354f616346c3")?;
 
-            let material_load_handle = loader_info_provider
-                .get_load_handle(&AssetRef::Uuid(material_uuid))
-                .unwrap();
-            Handle::<MaterialAsset>::new(ref_op_sender.clone(), material_load_handle)
-        });
-
-        let null_image_handle = SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
-            let material_uuid_str = "fc937369-cad2-4a00-bf42-5968f1210784";
-            let material_uuid =
-                AssetUuid(*uuid::Uuid::from_str(material_uuid_str).unwrap().as_bytes());
-
-            let material_load_handle = loader_info_provider
-                .get_load_handle(&AssetRef::Uuid(material_uuid))
-                .unwrap();
-            Handle::<ImageAsset>::new(ref_op_sender.clone(), material_load_handle)
-        });
+        let null_image_handle = make_handle_from_str("fc937369-cad2-4a00-bf42-5968f1210784")?;
 
         //
         // Material instance
@@ -321,15 +329,9 @@ impl Importer for GltfImporter {
             let material_instance_uuid = *unstable_state
                 .material_instance_asset_uuids
                 .entry(material_to_import.id.clone())
-                .or_insert_with(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+                .or_insert_with(|| op.new_asset_uuid());
 
-            let material_instance_handle =
-                SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
-                    let load_handle = loader_info_provider
-                        .get_load_handle(&AssetRef::Uuid(material_instance_uuid))
-                        .unwrap();
-                    Handle::<MaterialInstanceAsset>::new(ref_op_sender.clone(), load_handle)
-                });
+            let material_instance_handle = make_handle(material_instance_uuid);
 
             // Push the UUID into the list so that we have an O(1) lookup for image index to UUID
             material_instance_index_to_handle.push(material_instance_handle);
@@ -418,6 +420,46 @@ impl Importer for GltfImporter {
             });
         }
 
+        let animations_to_import =
+            extract_animations_to_import(&mut unstable_state, &doc, &buffers)?;
+
+        for anim_to_import in animations_to_import {
+            let anim_uuid = *unstable_state
+                .animation_asset_uuids
+                .entry(anim_to_import.id.clone())
+                .or_insert_with(|| op.new_asset_uuid());
+            log::debug!("Importing animation uuid {:?}", anim_uuid);
+
+            // Create the asset
+            imported_assets.push(ImportedAsset {
+                id: anim_uuid,
+                search_tags: vec![],
+                build_deps: vec![],
+                load_deps: vec![],
+                build_pipeline: None,
+                asset_data: Box::new(anim_to_import.asset),
+            });
+        }
+
+        let skeletons_to_import = extract_skeletons_to_import(&mut unstable_state, &doc, &buffers)?;
+        for skeleton_to_import in skeletons_to_import {
+            let skeleton_uuid = *unstable_state
+                .skeleton_asset_uuids
+                .entry(skeleton_to_import.id.clone())
+                .or_insert_with(|| op.new_asset_uuid());
+            log::debug!("Importing skeleton uuid {:?}", skeleton_uuid);
+
+            // Create the asset
+            imported_assets.push(ImportedAsset {
+                id: skeleton_uuid,
+                search_tags: vec![],
+                build_deps: vec![],
+                load_deps: vec![],
+                build_pipeline: None,
+                asset_data: Box::new(skeleton_to_import.asset),
+            });
+        }
+
         // let mut vertices = PushBuffer::new(16384);
         // let mut indices = PushBuffer::new(16384);
 
@@ -425,6 +467,7 @@ impl Importer for GltfImporter {
         // Meshes
         //
         let (meshes_to_import, buffers_to_import) = extract_meshes_to_import(
+            op,
             &mut unstable_state,
             &doc,
             &buffers,
@@ -439,14 +482,9 @@ impl Importer for GltfImporter {
             let buffer_uuid = *unstable_state
                 .buffer_asset_uuids
                 .entry(buffer_to_import.id.clone())
-                .or_insert_with(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+                .or_insert_with(|| op.new_asset_uuid());
 
-            let buffer_handle = SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
-                let load_handle = loader_info_provider
-                    .get_load_handle(&AssetRef::Uuid(buffer_uuid))
-                    .unwrap();
-                Handle::<GltfMaterialAsset>::new(ref_op_sender.clone(), load_handle)
-            });
+            let buffer_handle = make_handle::<BufferAssetData>(buffer_uuid);
 
             // Push the UUID into the list so that we have an O(1) lookup for image index to UUID
             buffer_index_to_handle.push(buffer_handle);
@@ -470,7 +508,7 @@ impl Importer for GltfImporter {
             let mesh_uuid = *unstable_state
                 .mesh_asset_uuids
                 .entry(mesh_to_import.id.clone())
-                .or_insert_with(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+                .or_insert_with(|| op.new_asset_uuid());
 
             // Push the UUID into the list so that we have an O(1) lookup for image index to UUID
             //mesh_index_to_uuid_lookup.push(mesh_uuid.clone());
@@ -523,6 +561,202 @@ impl Importer for GltfImporter {
             assets: imported_assets,
         })
     }
+}
+
+fn extract_skeletons_to_import(
+    state: &mut GltfImporterStateUnstable,
+    doc: &gltf::Document,
+    buffers: &[GltfBufferData],
+) -> atelier_assets::importer::Result<Vec<SkeletonToImport>> {
+    let mut skeletons = Vec::new();
+    for skin in doc.skins() {
+        let mut joints = Vec::new();
+        let reader = skin.reader(|buffer| buffers.get(buffer.index()).map(|x| &**x));
+        if let Some(matrices) = reader.read_inverse_bind_matrices() {
+            for (joint, matrix_array) in skin.joints().zip(matrices) {
+                let matrix = glam::mat4(
+                    matrix_array[0].into(),
+                    matrix_array[1].into(),
+                    matrix_array[2].into(),
+                    matrix_array[3].into(),
+                );
+                joints.push(SkeletonJoint {
+                    name: joint.name().unwrap_or("").to_string(),
+                    self_index: joint.index(),
+                    parent: None,
+                    children: joint.children().map(|node| node.index()).collect(),
+                    inverse_bind_matrix: matrix,
+                });
+            }
+        }
+
+        // fix up parent references
+        for joint_idx in 0..joints.len() {
+            let joint = &joints[joint_idx];
+            for child in joint.children.clone() {
+                let child_mut = &mut joints[child];
+                child_mut.parent = Some(joint_idx);
+            }
+        }
+        skeletons.push(SkeletonToImport {
+            id: skin
+                .name()
+                .map(|name| GltfObjectId::Name(name.to_string()))
+                .unwrap_or(GltfObjectId::Index(skin.index())),
+            asset: SkeletonAssetData { joints: joints },
+        });
+    }
+    Ok(skeletons)
+}
+fn extract_animations_to_import(
+    state: &mut GltfImporterStateUnstable,
+    doc: &gltf::Document,
+    buffers: &[GltfBufferData],
+) -> atelier_assets::importer::Result<Vec<AnimationToImport>> {
+    let mut animations = FnvHashMap::default();
+    for anim in doc.animations() {
+        // println!("anim {:?}", anim.name());
+        for channel in anim.channels() {
+            // println!(
+            //     "channel {:?} target node {:?} property {:?} interpolation {:?} skin {:?}",
+            //     idx,
+            //     channel.target().node().name(),
+            //     channel.target().property(),
+            //     channel.sampler().interpolation(),
+            //     channel.target().node().skin()
+            // );
+            let interpolation_mode = match channel.sampler().interpolation() {
+                Interpolation::Linear => InterpolationMode::Linear,
+                Interpolation::Step => InterpolationMode::Constant,
+                mode => panic!("Unsupported interpolation mode {:?}", mode),
+            };
+            let reader = channel.reader(|buf| Some(&buffers[buf.index()]));
+            let inputs = reader.read_inputs().unwrap();
+            let outputs = reader.read_outputs().unwrap();
+
+            let track = match outputs {
+                ReadOutputs::Translations(translations) => {
+                    let mut translation_data = Vec::new();
+                    for (translation, time) in translations.zip(inputs) {
+                        // println!("{}: {:?}", time, translation);
+                        translation_data.push((
+                            time,
+                            glam::Vec3::new(translation[0], translation[1], translation[2]),
+                        ));
+                    }
+                    AnimTrack {
+                        max_time: translation_data
+                            .iter()
+                            .map(|v| v.0)
+                            .max_by(|x, y| x.partial_cmp(y).unwrap())
+                            .unwrap_or(0.0),
+                        min_time: translation_data
+                            .iter()
+                            .map(|v| v.0)
+                            .min_by(|x, y| x.partial_cmp(y).unwrap())
+                            .unwrap_or(0.0),
+                        data: AnimTrackData::Translation(translation_data),
+                        interpolation_mode,
+                    }
+                }
+                ReadOutputs::Rotations(rotations) => {
+                    let mut rotation_data = Vec::new();
+                    for (rotation, time) in rotations.into_f32().zip(inputs) {
+                        rotation_data.push((
+                            time,
+                            glam::Quat::from_xyzw(
+                                rotation[0],
+                                rotation[1],
+                                rotation[2],
+                                rotation[3],
+                            ),
+                        ));
+                    }
+                    AnimTrack {
+                        max_time: rotation_data
+                            .iter()
+                            .map(|v| v.0)
+                            .max_by(|x, y| x.partial_cmp(y).unwrap())
+                            .unwrap_or(0.0),
+                        min_time: rotation_data
+                            .iter()
+                            .map(|v| v.0)
+                            .min_by(|x, y| x.partial_cmp(y).unwrap())
+                            .unwrap_or(0.0),
+                        data: AnimTrackData::Rotation(rotation_data),
+                        interpolation_mode,
+                    }
+                }
+                ReadOutputs::Scales(scales) => {
+                    let mut scale_data = Vec::new();
+                    for (scale, time) in scales.zip(inputs) {
+                        scale_data.push((time, glam::Vec3::new(scale[0], scale[1], scale[2])));
+                    }
+                    AnimTrack {
+                        max_time: scale_data
+                            .iter()
+                            .map(|v| v.0)
+                            .max_by(|x, y| x.partial_cmp(y).unwrap())
+                            .unwrap_or(0.0),
+                        min_time: scale_data
+                            .iter()
+                            .map(|v| v.0)
+                            .min_by(|x, y| x.partial_cmp(y).unwrap())
+                            .unwrap_or(0.0),
+                        data: AnimTrackData::Scale(scale_data),
+                        interpolation_mode,
+                    }
+                }
+                _ => panic!("unhandled channel type {:?}", channel.target().property()),
+            };
+            // println!("track {:?}", track);
+            if let Some(anim_name) = anim.name() {
+                // println!(
+                //     "channel {:?} with target {:?} property {:?} for animation  {:?}",
+                //     idx,
+                //     channel.target().node().name(),
+                //     channel.target().property(),
+                //     anim_name
+                // );
+                let animation = animations
+                    .entry(GltfObjectId::Name(anim_name.to_string()))
+                    .or_insert_with(|| AnimationAssetData {
+                        name: anim.name().expect("Animation without name").to_string(),
+                        joint_tracks: Vec::new(),
+                    });
+                let joint_name = channel
+                    .target()
+                    .node()
+                    .name()
+                    .expect("channel target has no name");
+
+                let joint_track = if let Some(joint_track) = animation
+                    .joint_tracks
+                    .iter_mut()
+                    .find(|a| a.target_joint == joint_name)
+                {
+                    joint_track
+                } else {
+                    animation.joint_tracks.push(JointTrackCollection {
+                        target_joint: joint_name.to_string(),
+                        tracks: Vec::new(),
+                    });
+                    animation.joint_tracks.last_mut().unwrap()
+                };
+                joint_track.tracks.push(track);
+            } else {
+                log::error!("channel's animation has no name");
+            }
+        }
+        // for sampler in anim.samplers() {
+        //     println!("sampler {:?}", sampler);
+        // }
+    }
+    let mut animations_to_import = Vec::new();
+    for (id, anim) in animations {
+        animations_to_import.push(AnimationToImport { id, asset: anim })
+    }
+    Ok(animations_to_import)
 }
 
 fn extract_images_to_import(
@@ -785,6 +1019,7 @@ fn convert_to_u16_indices(
 }
 
 fn extract_meshes_to_import(
+    op: &mut ImportOp,
     state: &mut GltfImporterStateUnstable,
     doc: &gltf::Document,
     buffers: &[GltfBufferData],
@@ -796,11 +1031,26 @@ fn extract_meshes_to_import(
     let mut buffers_to_import = Vec::with_capacity(doc.meshes().len() * 2);
 
     for mesh in doc.meshes() {
-        let mut all_vertices = PushBuffer::new(16384);
-        let mut all_indices = PushBuffer::new(16384);
 
+        let mut skin_joint_names = Vec::new();
+        for node in doc.nodes() {
+            if let Some(node_mesh) = node.mesh() {
+                if node_mesh.index() != mesh.index() {
+                    continue;
+                }
+                if let Some(node_skin) = node.skin() {
+                    for joint in node_skin.joints() {
+                        skin_joint_names
+                            .push(joint.name().expect("joint without name").to_string());
+                    }
+                    break;
+                }
+            }
+        }
+
+        let mut buffer_data = Vec::new(); 
+        let mut buffer_data_layout = Layout::new::<()>();
         let mut mesh_parts: Vec<MeshPartAssetData> = Vec::with_capacity(mesh.primitives().len());
-
         //
         // Iterate all mesh parts, building a single vertex and index buffer. Each MeshPart will
         // hold offsets/lengths to their sections in the vertex/index buffers
@@ -809,71 +1059,59 @@ fn extract_meshes_to_import(
             let mesh_part = {
                 let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(|x| &**x));
 
-                let positions = reader.read_positions();
-                let normals = reader.read_normals();
-                let tangents = reader.read_tangents();
-                //let colors = reader.read_colors();
-                let tex_coords = reader.read_tex_coords(0);
-                let indices = reader.read_indices();
+                // Positions are stored in a separate buffer
+                let positions = if let Some(positions) = reader.read_positions() {
+                    let layout = VertexDataLayout::build_vertex_layout(&[0f32;3], |builder, vertex| {
+                        builder.add_member(vertex, "POSITION", Format::R32G32B32_SFLOAT);
+                    });
+                    let position_data = positions.collect::<Vec<_>>();
+                    Some(VertexData::new_from_slice(&layout, &position_data))
+                } else {
+                    None
+                };
 
-                if let (
-                    Some(indices),
-                    Some(positions),
-                    Some(normals),
-                    Some(tangents),
-                    Some(tex_coords),
-                ) = (indices, positions, normals, tangents, tex_coords)
-                {
-                    let part_indices = convert_to_u16_indices(indices);
-
-                    if let Ok(part_indices) = part_indices {
-                        //TODO: Consider computing binormal (bitangent) here
-                        let positions: Vec<_> = positions.collect();
-                        let normals: Vec<_> = normals.collect();
-                        let tangents: Vec<_> = tangents.collect();
-                        let tex_coords: Vec<_> = tex_coords.into_f32().collect();
-
-                        let vertex_offset = all_vertices.len();
-                        let indices_offset = all_indices.len();
-
-                        for i in 0..positions.len() {
-                            all_vertices.push(
-                                &[MeshVertex {
-                                    position: positions[i],
-                                    normal: normals[i],
-                                    tangent: tangents[i],
-                                    tex_coord: tex_coords[i],
-                                }],
-                                1,
-                            );
-                        }
-
-                        all_indices.push(&part_indices, 1);
-
-                        let vertex_size = all_vertices.len() - vertex_offset;
-                        let indices_size = all_indices.len() - indices_offset;
-
-                        let (material, material_instance) = if let Some(material_index) =
-                            primitive.material().index()
-                        {
-                            (
-                                material_index_to_handle[material_index].clone(),
-                                material_instance_index_to_handle[material_index].clone(),
-                            )
-                        } else {
-                            return Err(atelier_assets::importer::Error::Boxed(Box::new(
-                                GltfImportError::new("A mesh primitive did not have a material"),
-                            )));
-                        };
-
-                        Some(MeshPartAssetData {
-                            material,
-                            material_instance,
-                            vertex_buffer_offset_in_bytes: vertex_offset as u32,
-                            vertex_buffer_size_in_bytes: vertex_size as u32,
-                            index_buffer_offset_in_bytes: indices_offset as u32,
-                            index_buffer_size_in_bytes: indices_size as u32,
-                        })
+                let mut attribute_data = Vec::new();
+                if let Some(normals) = reader.read_normals() {
+                    let layout = VertexDataLayout::build_vertex_layout(&[0f32;3], |builder, vertex| {
+                        builder.add_member(vertex, "NORMAL", Format::R32G32B32_SFLOAT);
+                    });
+                    let data = normals.collect::<Vec<_>>();
+                    attribute_data.push(VertexData::new_from_slice(&layout, &data));
+                }
+                if let Some(tangents) = reader.read_tangents() {
+                    let layout = VertexDataLayout::build_vertex_layout(&[0f32;4], |builder, vertex| {
+                        builder.add_member(vertex, "TANGENT", Format::R32G32B32A32_SFLOAT);
+                    });
+                    let data = tangents.collect::<Vec<_>>();
+                    attribute_data.push(VertexData::new_from_slice(&layout, &data));
+                }
+                // get up to 4 color attributes
+                for i in 0..4 {
+                    if let Some(colors) = reader.read_colors(i) {
+                        let layout = VertexDataLayout::build_vertex_layout(&[0f32;4], |builder, vertex| {
+                            builder.add_member(vertex, format!("COLOR{}", i), Format::R32G32B32A32_SFLOAT);
+                        });
+                        let data = colors.into_rgba_f32().collect::<Vec<_>>();
+                        attribute_data.push(VertexData::new_from_slice(&layout, &data));
+                    }
+                }
+                // get up to 4 texcoord attributes
+                for i in 0..4 {
+                    if let Some(tex_coords) = reader.read_tex_coords(0) {
+                        let layout = VertexDataLayout::build_vertex_layout(&[0f32;2], |builder, vertex| {
+                            builder.add_member(vertex, format!("TEXCOORD{}", i), Format::R32G32_SFLOAT);
+                        });
+                        let data = tex_coords.into_f32().collect::<Vec<_>>();
+                        attribute_data.push(VertexData::new_from_slice(&layout, &data));
+                    }
+                }
+                // Indices are stored in a separate buffer
+                let indices = if let Some(indices) = reader.read_indices() {
+                    let layout = VertexDataLayout::build_vertex_layout(&0u16, |builder, vertex| {
+                        builder.add_member(vertex, "INDEX", Format::R16_UINT);
+                    });
+                    if let Ok(data) = convert_to_u16_indices(indices) {
+                        Some(VertexData::new_from_slice(&layout, &data))
                     } else {
                         log::error!("indices must fit in u16");
                         return Err(atelier_assets::importer::Error::Boxed(Box::new(
@@ -881,13 +1119,110 @@ fn extract_meshes_to_import(
                         )));
                     }
                 } else {
-                    log::error!(
-                        "Mesh primitives must specify indices, positions, normals, tangents, and tex_coords"
-                    );
+                    None
+                };
 
-                    return Err(atelier_assets::importer::Error::Boxed(Box::new(
-                        GltfImportError::new("Mesh primitives must specify indices, positions, normals, tangents, and tex_coords"),
+                match (indices, positions) {
+                    (
+                        Some(indices),
+                        Some(positions),
+                    ) => {
+                        //TODO: Consider computing binormal (bitangent) here
+
+                        let (material, material_instance) =
+                            if let Some(material_index) = primitive.material().index() {
+                                (
+                                    material_index_to_handle[material_index].clone(),
+                                    material_instance_index_to_handle[material_index].clone(),
+                                )
+                            } else {
+                                return Err(atelier_assets::importer::Error::Boxed(Box::new(
+                                    GltfImportError::new(
+                                        "A mesh primitive did not have a material",
+                                    ),
+                                )));
+                            };
+
+                        let mut vertex_layouts = Vec::new();
+                        // Copy positions into buffer
+                        {
+                            let positions_layout = Layout::from_size_align(positions.layout.vertex_size() * positions.vertex_count, 16).unwrap();
+                            let (new_buffer_data_layout, positions_offset) = buffer_data_layout.extend(positions_layout).unwrap();
+                            buffer_data_layout = new_buffer_data_layout;
+                            buffer_data.resize(new_buffer_data_layout.size(), 0);
+                            positions.copy_to_byte_slice(&positions.layout, &mut buffer_data[positions_offset..]).expect("failed to copy vertex data");
+                            vertex_layouts.push((positions.layout, positions_offset));
+                        }
+
+                        // Copy indices into buffer
+                        let index_layout = {
+                            let indices_layout = Layout::from_size_align(indices.layout.vertex_size() * indices.vertex_count, 16).unwrap();
+                            let (new_buffer_data_layout, indices_offset) = buffer_data_layout.extend(indices_layout).unwrap();
+                            buffer_data_layout = new_buffer_data_layout;
+                            buffer_data.resize(new_buffer_data_layout.size(), 0);
+                            indices.copy_to_byte_slice(&indices.layout, &mut buffer_data[indices_offset..]).expect("failed to copy vertex data");
+                            (indices.layout, indices_offset)
+                        };
+
+                        let num_vertices = positions.vertex_count;
+                        if !attribute_data.is_empty() {
+                            // Combine attributes into a single packed layout
+                            let attribute_members = attribute_data.iter().flat_map(|a| a.layout.members()).collect::<Vec<_>>();
+                            let mut combined_attribute_size = 0; 
+                            let mut members = Vec::new();
+                            for (semantic, meta) in attribute_members {
+                                members.push(VertexMember { 
+                                    semantic: semantic.clone(),
+                                    offset: meta.offset + combined_attribute_size,
+                                    format: meta.format,
+                                });
+                                combined_attribute_size += size_of_vertex_format(meta.format).expect("invalid vertex format");
+                            }
+                            let combined_attribute_layout = VertexDataLayout::new(combined_attribute_size, &members);
+                            // Copy combined vertex attributes
+                            let attribute_segment_layout = Layout::from_size_align(combined_attribute_layout.vertex_size() * num_vertices, 16).unwrap();
+                            let (new_buffer_data_layout, attribute_offset) = buffer_data_layout.extend(attribute_segment_layout).unwrap();
+                            buffer_data_layout = new_buffer_data_layout;
+                            buffer_data.resize(new_buffer_data_layout.size(), 0);
+                            for vertex_data in attribute_data {
+                                vertex_data.copy_to_byte_slice(&combined_attribute_layout, &mut buffer_data[attribute_offset..]).expect("failed to copy vertex data");
+                            }
+                            vertex_layouts.push((combined_attribute_layout, attribute_offset));
+                        }
+
+                        Some(MeshPartAssetData {
+                            material,
+                            material_instance,
+                            vertex_layouts,
+                            index_layout,
+                            num_vertices,
+                            num_indices: indices.vertex_count,
+                            skin_joint_names: if !skin_joint_names.is_empty() {
+                                Some(skin_joint_names.clone())
+                            } else {
+                                None
+                            },
+                        })
+                    }
+                    (indices, positions) => {
+                        let mut missing_primitives = Vec::new();
+                        if indices.is_none() {
+                            missing_primitives.push("indices");
+                        }
+                        if positions.is_none() {
+                            missing_primitives.push("positions");
+                        }
+                        log::error!(
+                            "Mesh primitives must specify indices and positions. {}.{} is missing {}",
+                            mesh.name().unwrap_or(""),
+                            primitive.index(),
+                            itertools::join(missing_primitives, ", "),
+                        );
+
+                        return Err(atelier_assets::importer::Error::Boxed(Box::new(
+                        GltfImportError::new("Mesh primitives must specify indices, positions"),
                     )));
+                    }
                 }
             };
 
@@ -896,14 +1231,15 @@ fn extract_meshes_to_import(
             }
         }
 
+ 
         //
         // Vertex Buffer
         //
         let vertex_buffer_asset = BufferAssetData {
-            data: all_vertices.into_data(),
+            data: buffer_data,
         };
 
-        let vertex_buffer_id = GltfObjectId::Index(buffers_to_import.len());
+        let vertex_buffer_id = GltfObjectId::Index(mesh.index());
         let vertex_buffer_to_import = BufferToImport {
             asset: vertex_buffer_asset,
             id: vertex_buffer_id.clone(),
@@ -912,50 +1248,14 @@ fn extract_meshes_to_import(
         let vertex_buffer_uuid = *state
             .buffer_asset_uuids
             .entry(vertex_buffer_id)
-            .or_insert_with(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
+            .or_insert_with(|| op.new_asset_uuid());
 
         buffers_to_import.push(vertex_buffer_to_import);
 
-        let vertex_buffer_handle =
-            SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
-                let load_handle = loader_info_provider
-                    .get_load_handle(&AssetRef::Uuid(vertex_buffer_uuid))
-                    .unwrap();
-                Handle::<BufferAsset>::new(ref_op_sender.clone(), load_handle)
-            });
-
-        //
-        // Index Buffer
-        //
-        let index_buffer_asset = BufferAssetData {
-            data: all_indices.into_data(),
-        };
-
-        let index_buffer_id = GltfObjectId::Index(buffers_to_import.len());
-        let index_buffer_to_import = BufferToImport {
-            asset: index_buffer_asset,
-            id: index_buffer_id.clone(),
-        };
-
-        let index_buffer_uuid = *state
-            .buffer_asset_uuids
-            .entry(index_buffer_id)
-            .or_insert_with(|| AssetUuid(*uuid::Uuid::new_v4().as_bytes()));
-
-        buffers_to_import.push(index_buffer_to_import);
-
-        let index_buffer_handle =
-            SerdeContext::with_active(|loader_info_provider, ref_op_sender| {
-                let load_handle = loader_info_provider
-                    .get_load_handle(&AssetRef::Uuid(index_buffer_uuid))
-                    .unwrap();
-                Handle::<BufferAsset>::new(ref_op_sender.clone(), load_handle)
-            });
-
+        let vertex_buffer_handle = make_handle(vertex_buffer_uuid);
         let asset = MeshAssetData {
             mesh_parts,
-            vertex_buffer: vertex_buffer_handle,
-            index_buffer: index_buffer_handle,
+            buffer: vertex_buffer_handle,
         };
 
         let mesh_id = mesh

@@ -1,9 +1,10 @@
 use atelier_assets::loader::handle::Handle;
+use glam::{Mat4, Quat, Vec3};
 use lazy_static;
-use rafx::assets::BufferAsset;
 use rafx::assets::ImageAsset;
 use rafx::assets::MaterialInstanceAsset;
 use rafx::resources::{VertexDataLayout, VertexDataSetLayout};
+use rafx::{assets::BufferAsset, resources::VertexDataSet};
 use serde::{Deserialize, Serialize};
 use shaders::mesh_frag::MaterialDataStd140;
 use type_uuid::*;
@@ -105,45 +106,166 @@ pub struct GltfMaterialAsset {
     // support for points/lines?
 }
 
-/// Vertex format for vertices sent to the GPU
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, Default)]
-#[repr(C)]
-pub struct MeshVertex {
-    pub position: [f32; 3],
-    pub normal: [f32; 3],
-    // w component is a sign value (-1 or +1) indicating handedness of the tangent basis
-    // see GLTF spec for more info
-    pub tangent: [f32; 4],
-    pub tex_coord: [f32; 2],
-}
-
-lazy_static::lazy_static! {
-    pub static ref MESH_VERTEX_LAYOUT : VertexDataSetLayout = {
-        use rafx::resources::vk_description::Format;
-
-        VertexDataLayout::build_vertex_layout(&MeshVertex::default(), |builder, vertex| {
-            builder.add_member(&vertex.position, "POSITION", Format::R32G32B32_SFLOAT);
-            builder.add_member(&vertex.normal, "NORMAL", Format::R32G32B32_SFLOAT);
-            builder.add_member(&vertex.tangent, "TANGENT", Format::R32G32B32A32_SFLOAT);
-            builder.add_member(&vertex.tex_coord, "TEXCOORD", Format::R32G32_SFLOAT);
-        }).into_set()
-    };
-}
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MeshPartAssetData {
-    pub vertex_buffer_offset_in_bytes: u32,
-    pub vertex_buffer_size_in_bytes: u32,
-    pub index_buffer_offset_in_bytes: u32,
-    pub index_buffer_size_in_bytes: u32,
+    pub vertex_layouts: Vec<(VertexDataLayout, usize)>, // Vertex data layout, buffer offset
+    pub index_layout: (VertexDataLayout, usize), // Indices data layout, buffer offset
+    pub num_vertices: usize,
+    pub num_indices: usize,
     pub material: Handle<GltfMaterialAsset>,
     pub material_instance: Handle<MaterialInstanceAsset>,
+    pub skin_joint_names: Option<Vec<String>>, // index corresponds to vertex joint index
 }
 
 #[derive(TypeUuid, Serialize, Deserialize, Clone)]
 #[uuid = "cf232526-3757-4d94-98d1-c2f7e27c979f"]
 pub struct MeshAssetData {
     pub mesh_parts: Vec<MeshPartAssetData>,
-    pub vertex_buffer: Handle<BufferAsset>, //Vec<MeshVertex>,
-    pub index_buffer: Handle<BufferAsset>,  //Vec<u16>,
+    pub buffer: Handle<BufferAsset>, 
+}
+
+#[derive(TypeUuid, Serialize, Deserialize, Clone, Debug)]
+#[uuid = "59866591-a9df-4fe4-a30c-818dbda9931c"]
+pub struct SkeletonJoint {
+    pub name: String,
+    pub self_index: usize,
+    pub parent: Option<usize>,
+    pub children: Vec<usize>,
+    pub inverse_bind_matrix: Mat4,
+}
+
+#[derive(TypeUuid, Serialize, Deserialize, Clone, Debug)]
+#[uuid = "47496390-9422-433b-ac18-6b86d275374b"]
+pub struct SkeletonAssetData {
+    pub joints: Vec<SkeletonJoint>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum AnimTrackData {
+    Translation(Vec<(f32, Vec3)>),
+    Rotation(Vec<(f32, Quat)>),
+    Scale(Vec<(f32, Vec3)>),
+}
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum InterpolationMode {
+    Linear,
+    Constant,
+}
+
+#[derive(TypeUuid, Serialize, Deserialize, Clone, Debug)]
+#[uuid = "8c1efce7-cc3f-4ff6-82a9-42100fdcbfc6"]
+pub struct AnimTrack {
+    pub min_time: f32,
+    pub max_time: f32,
+    pub interpolation_mode: InterpolationMode,
+    pub data: AnimTrackData,
+}
+
+impl AnimTrack {
+    pub fn sample(
+        &self,
+        time: f32,
+        weight: f32,
+        pos_out: &mut glam::Vec3,
+        rot_out: &mut glam::Quat,
+        scale_out: &mut glam::Vec3,
+    ) {
+        match &self.data {
+            AnimTrackData::Translation(keyframes) => {
+                let pos = {
+                    if keyframes.len() == 0 {
+                        glam::Vec3::default()
+                    } else if keyframes.len() == 1 {
+                        keyframes.get(0).unwrap().1
+                    } else {
+                        match &self.interpolation_mode {
+                            InterpolationMode::Linear => {
+                                let mut value = None;
+                                for window in keyframes.windows(2) {
+                                    let first = &window[0];
+                                    let second = &window[1];
+                                    if second.0 <= time {
+                                        let duration = second.0 - first.0;
+                                        let t = (first.0 - time) / duration;
+                                        value = Some(first.1.lerp(second.1, t));
+                                    }
+                                }
+                                value.unwrap_or_else(|| keyframes.last().unwrap().1)
+                            }
+                            mode => panic!("unexpected InterpolationMode: {:?}", mode),
+                        }
+                    }
+                };
+                *pos_out += pos * weight;
+            }
+            AnimTrackData::Rotation(keyframes) => {
+                let rot = {
+                    if keyframes.len() == 0 {
+                        glam::Quat::default()
+                    } else if keyframes.len() == 1 {
+                        keyframes.get(0).unwrap().1
+                    } else {
+                        match &self.interpolation_mode {
+                            InterpolationMode::Linear => {
+                                let mut value = None;
+                                for window in keyframes.windows(2) {
+                                    let first = &window[0];
+                                    let second = &window[1];
+                                    if second.0 <= time {
+                                        let duration = second.0 - first.0;
+                                        let t = (first.0 - time) / duration;
+                                        value = Some(first.1.slerp(second.1, t));
+                                    }
+                                }
+                                value.unwrap_or_else(|| keyframes.last().unwrap().1)
+                            }
+                            mode => panic!("unexpected InterpolationMode: {:?}", mode),
+                        }
+                    }
+                };
+                *rot_out *= Quat::identity().slerp(rot, weight);
+            }
+            AnimTrackData::Scale(keyframes) => {
+                let scale = {
+                    if keyframes.len() == 0 {
+                        glam::Vec3::one()
+                    } else if keyframes.len() == 1 {
+                        keyframes.get(0).unwrap().1
+                    } else {
+                        match &self.interpolation_mode {
+                            InterpolationMode::Linear => {
+                                let mut value = None;
+                                for window in keyframes.windows(2) {
+                                    let first = &window[0];
+                                    let second = &window[1];
+                                    if second.0 <= time {
+                                        let duration = second.0 - first.0;
+                                        let t = (first.0 - time) / duration;
+                                        value = Some(first.1.lerp(second.1, t));
+                                    }
+                                }
+                                value.unwrap_or_else(|| keyframes.last().unwrap().1)
+                            }
+                            mode => panic!("unexpected InterpolationMode: {:?}", mode),
+                        }
+                    }
+                };
+                *scale_out += scale * weight;
+            }
+        }
+    }
+}
+
+#[derive(TypeUuid, Serialize, Deserialize, Clone, Debug)]
+#[uuid = "59866591-a9df-4fe4-a30c-818dbda9931c"]
+pub struct JointTrackCollection {
+    pub tracks: Vec<AnimTrack>,
+    pub target_joint: String,
+}
+
+#[derive(TypeUuid, Serialize, Deserialize, Clone, Debug)]
+#[uuid = "5863a939-6325-4cae-9aba-58d7d7b885e4"]
+pub struct AnimationAssetData {
+    pub name: String,
+    pub joint_tracks: Vec<JointTrackCollection>,
 }

@@ -1,0 +1,150 @@
+(
+    version: 1,
+    import_hash: Some(7444019276482546419),
+    importer_version: 29,
+    importer_type: "fc9ae812-110d-4daf-9223-e87b40966c6b",
+    importer_options: (),
+    importer_state: (
+        buffer_asset_uuids: [
+            (Index(0), "7c7041dc-e230-4387-aa15-7adbe3a40669"),
+            (Index(1), "9f47e4a1-b000-48e3-900c-2228e53e1f04"),
+        ],
+        image_asset_uuids: [],
+        material_asset_uuids: [
+            (Name("Cylinder"), "81aa842a-9ae2-4776-970e-4ca5cbee9add"),
+        ],
+        material_instance_asset_uuids: [
+            (Name("Cylinder"), "7920fafb-95cf-4186-81d4-2c578bdd3ab5"),
+        ],
+        mesh_asset_uuids: [
+            (Name("Cylinder"), "9270aeb0-0801-4bcf-a739-d2f2b4cc760a"),
+        ],
+        animation_asset_uuids: [
+            (Name("SkeletonAnimation"), "315ba17d-0cc4-4403-8d11-7725c784a182"),
+        ],
+        skeleton_asset_uuids: [
+            (Name("Root"), "6ed3e7ec-9aac-4c07-b95b-c53325becb9c"),
+        ],
+    ),
+    assets: [
+        (
+            id: "81aa842a-9ae2-4776-970e-4ca5cbee9add",
+            search_tags: [
+                ("material_name", Some("Cylinder")),
+                ("file_name", Some("03_skinned_cylinder.gltf")),
+            ],
+            build_pipeline: None,
+            artifact: Some((
+                id: (10980328988122919050),
+                asset_id: "81aa842a-9ae2-4776-970e-4ca5cbee9add",
+                build_deps: [],
+                load_deps: [],
+                compression: None,
+                compressed_size: Some(58),
+                uncompressed_size: Some(58),
+                type_id: "130a91a8-ba80-4cad-9bce-848326b234c7",
+            )),
+        ),
+        (
+            id: "7920fafb-95cf-4186-81d4-2c578bdd3ab5",
+            search_tags: [
+                ("material_name", Some("Cylinder")),
+                ("file_name", Some("03_skinned_cylinder.gltf")),
+            ],
+            build_pipeline: None,
+            artifact: Some((
+                id: (3625038293486842019),
+                asset_id: "7920fafb-95cf-4186-81d4-2c578bdd3ab5",
+                build_deps: [
+                    Uuid("92a98639-de0d-40cf-a222-354f616346c3"),
+                    Uuid("fc937369-cad2-4a00-bf42-5968f1210784"),
+                ],
+                load_deps: [
+                    Uuid("fc937369-cad2-4a00-bf42-5968f1210784"),
+                    Uuid("92a98639-de0d-40cf-a222-354f616346c3"),
+                ],
+                compression: None,
+                compressed_size: Some(414),
+                uncompressed_size: Some(414),
+                type_id: "0d8cacf7-79df-4aa6-b99e-659a9c3b5e6b",
+            )),
+        ),
+        (
+            id: "315ba17d-0cc4-4403-8d11-7725c784a182",
+            search_tags: [
+                ("file_name", Some("03_skinned_cylinder.gltf")),
+            ],
+            build_pipeline: None,
+            artifact: Some((
+                id: (13901492030935776256),
+                asset_id: "315ba17d-0cc4-4403-8d11-7725c784a182",
+                build_deps: [],
+                load_deps: [],
+                compression: None,
+                compressed_size: Some(25592),
+                uncompressed_size: Some(25592),
+                type_id: "5863a939-6325-4cae-9aba-58d7d7b885e4",
+            )),
+        ),
+        (
+            id: "6ed3e7ec-9aac-4c07-b95b-c53325becb9c",
+            search_tags: [
+                ("file_name", Some("03_skinned_cylinder.gltf")),
+            ],
+            build_pipeline: None,
+            artifact: Some((
+                id: (12689723440765570067),
+                asset_id: "6ed3e7ec-9aac-4c07-b95b-c53325becb9c",
+                build_deps: [],
+                load_deps: [],
+                compression: None,
+                compressed_size: Some(451),
+                uncompressed_size: Some(451),
+                type_id: "47496390-9422-433b-ac18-6b86d275374b",
+            )),
+        ),
+        (
+            id: "7c7041dc-e230-4387-aa15-7adbe3a40669",
+            search_tags: [
+                ("file_name", Some("03_skinned_cylinder.gltf")),
+            ],
+            build_pipeline: None,
+            artifact: Some((
+                id: (12217889053587474383),
+                asset_id: "7c7041dc-e230-4387-aa15-7adbe3a40669",
+                build_deps: [],
+                load_deps: [],
+                compression: None,
+                compressed_size: Some(56784),
+                uncompressed_size: Some(56784),
+                type_id: "2d6653ce-5f77-40a2-b050-f2d148699d78",
+            )),
+        ),
+        (
+            id: "9270aeb0-0801-4bcf-a739-d2f2b4cc760a",
+            search_tags: [
+                ("mesh_name", Some("Cylinder")),
+                ("file_name", Some("03_skinned_cylinder.gltf")),
+            ],
+            build_pipeline: None,
+            artifact: Some((
+                id: (6510158552932187382),
+                asset_id: "9270aeb0-0801-4bcf-a739-d2f2b4cc760a",
+                build_deps: [
+                    Uuid("7c7041dc-e230-4387-aa15-7adbe3a40669"),
+                    Uuid("81aa842a-9ae2-4776-970e-4ca5cbee9add"),
+                    Uuid("7920fafb-95cf-4186-81d4-2c578bdd3ab5"),
+                ],
+                load_deps: [
+                    Uuid("7c7041dc-e230-4387-aa15-7adbe3a40669"),
+                    Uuid("7920fafb-95cf-4186-81d4-2c578bdd3ab5"),
+                    Uuid("81aa842a-9ae2-4776-970e-4ca5cbee9add"),
+                ],
+                compression: None,
+                compressed_size: Some(566),
+                uncompressed_size: Some(566),
+                type_id: "cf232526-3757-4d94-98d1-c2f7e27c979f",
+            )),
+        ),
+    ],
+)

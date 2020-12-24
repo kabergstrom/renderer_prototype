@@ -2,8 +2,8 @@ use crate::assets::pipeline::{
     MaterialAssetData, MaterialInstanceAssetData, PipelineAssetData, RenderpassAssetData,
     SamplerAssetData,
 };
-use atelier_assets::core::AssetUuid;
 use atelier_assets::importer::{ImportedAsset, Importer, ImporterValue};
+use atelier_assets::{core::AssetUuid, importer::ImportOp};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use type_uuid::*;
@@ -35,6 +35,7 @@ impl Importer for SamplerImporter {
     #[profiling::function]
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn Read,
         _options: &Self::Options,
         state: &mut Self::State,
@@ -87,6 +88,7 @@ impl Importer for PipelineImporter {
     #[profiling::function]
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn Read,
         _options: &Self::Options,
         state: &mut Self::State,
@@ -139,6 +141,7 @@ impl Importer for RenderpassImporter {
     #[profiling::function]
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn Read,
         _options: &Self::Options,
         state: &mut Self::State,
@@ -191,6 +194,7 @@ impl Importer for MaterialImporter {
     #[profiling::function]
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn Read,
         _options: &Self::Options,
         state: &mut Self::State,
@@ -243,6 +247,7 @@ impl Importer for MaterialInstanceImporter {
     #[profiling::function]
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn Read,
         _options: &Self::Options,
         state: &mut Self::State,

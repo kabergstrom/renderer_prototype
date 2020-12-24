@@ -1,7 +1,7 @@
 use crate::assets::shader::ShaderAssetData;
 use crate::CookedShader;
-use atelier_assets::core::AssetUuid;
 use atelier_assets::importer::{ImportedAsset, Importer, ImporterValue};
+use atelier_assets::{core::AssetUuid, importer::ImportOp};
 use rafx_resources::vk_description as dsc;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
@@ -47,6 +47,7 @@ impl Importer for ShaderImporterSpv {
     #[profiling::function]
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn Read,
         _options: &Self::Options,
         state: &mut Self::State,
@@ -116,6 +117,7 @@ impl Importer for ShaderImporterCooked {
     #[profiling::function]
     fn import(
         &self,
+        _op: &mut ImportOp,
         source: &mut dyn Read,
         _options: &Self::Options,
         state: &mut Self::State,

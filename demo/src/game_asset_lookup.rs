@@ -1,6 +1,6 @@
 use crate::assets::gltf::MeshAssetData;
 use atelier_assets::loader::Loader;
-use rafx::assets::AssetLookup;
+use rafx::{assets::AssetLookup, resources::{VertexDataLayout, VertexDataSetLayout}};
 use rafx::assets::MaterialPass;
 use rafx::resources::{BufferResource, DescriptorSetArc, ResourceArc};
 use std::sync::Arc;
@@ -11,16 +11,16 @@ pub struct MeshAssetPart {
     pub opaque_material_descriptor_set: DescriptorSetArc,
     // These are optional because we might want to disable casting shadows
     pub shadow_map_pass: Option<MaterialPass>,
-    pub vertex_buffer_offset_in_bytes: u32,
-    pub vertex_buffer_size_in_bytes: u32,
-    pub index_buffer_offset_in_bytes: u32,
-    pub index_buffer_size_in_bytes: u32,
+    pub vertex_layouts: VertexDataSetLayout, 
+    pub vertex_binding_buffer_offsets: Vec<usize>, // Vertex buffer offset corresponding to binding number in VertexDataSetLayout
+    pub index_buffer_offset: usize, 
+    pub num_vertices: usize,
+    pub num_indices: usize,
 }
 
 pub struct MeshAssetInner {
     pub mesh_parts: Vec<Option<MeshAssetPart>>,
     pub vertex_buffer: ResourceArc<BufferResource>,
-    pub index_buffer: ResourceArc<BufferResource>,
     pub asset_data: MeshAssetData,
 }
 

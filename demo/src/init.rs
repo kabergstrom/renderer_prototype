@@ -1,4 +1,3 @@
-use crate::asset_loader::ResourceAssetLoader;
 use crate::asset_resource::AssetResource;
 use crate::assets::gltf::{GltfMaterialAsset, MeshAssetData};
 use crate::features::debug3d::{Debug3dRenderFeature, DebugDraw3DResource};
@@ -10,6 +9,10 @@ use crate::game_asset_manager::GameAssetManager;
 use crate::game_renderer::{GameRenderer, SwapchainLifetimeListener};
 use crate::phases::TransparentRenderPhase;
 use crate::phases::{OpaqueRenderPhase, ShadowMapRenderPhase, UiRenderPhase};
+use crate::{
+    asset_loader::ResourceAssetLoader,
+    assets::gltf::{AnimationAssetData, SkeletonAssetData},
+};
 use atelier_assets::loader::{
     packfile_io::PackfileReader, storage::DefaultIndirectionResolver, Loader, RpcIO,
 };
@@ -196,6 +199,8 @@ pub fn rendering_init(
         ));
 
         asset_resource.add_storage::<GltfMaterialAsset>();
+        asset_resource.add_storage::<SkeletonAssetData>();
+        asset_resource.add_storage::<AnimationAssetData>();
         game_resource_manager
     };
 

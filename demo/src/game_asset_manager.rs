@@ -9,7 +9,7 @@ use atelier_assets::loader::handle::Handle;
 use atelier_assets::loader::storage::AssetLoadOp;
 use atelier_assets::loader::Loader;
 use crossbeam_channel::Sender;
-use rafx::assets::{AssetLookup, AssetManager, GenericLoader, LoadQueues};
+use rafx::{assets::{AssetLookup, AssetManager, GenericLoader, LoadQueues}, resources::VertexDataSetLayout};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -136,14 +136,7 @@ impl GameAssetManager {
         let vertex_buffer = asset_manager
             .loaded_assets()
             .buffers
-            .get_latest(mesh_asset.vertex_buffer.load_handle())
-            .unwrap()
-            .buffer
-            .clone();
-        let index_buffer = asset_manager
-            .loaded_assets()
-            .buffers
-            .get_latest(mesh_asset.index_buffer.load_handle())
+            .get_latest(mesh_asset.buffer.load_handle())
             .unwrap()
             .buffer
             .clone();
@@ -185,6 +178,11 @@ impl GameAssetManager {
 
                 const PER_MATERIAL_DESCRIPTOR_SET_LAYOUT_INDEX: usize = 1;
 
+                let mut layout_offsets = Vec::new();
+                for (_, offset) in &mesh_part.vertex_layouts {
+                    layout_offsets.push(*offset);
+                }
+                let layout_set = VertexDataSetLayout::new(mesh_part.vertex_layouts.iter().map(|(layout, _)| layout.clone()).collect());
                 Some(MeshAssetPart {
                     opaque_pass: material_instance.material.passes[opaque_pass_index].clone(),
                     opaque_material_descriptor_set: material_instance.material_descriptor_sets
@@ -194,17 +192,17 @@ impl GameAssetManager {
                         .clone(),
                     shadow_map_pass: shadow_map_pass_index
                         .map(|pass_index| material_instance.material.passes[pass_index].clone()),
-                    vertex_buffer_offset_in_bytes: mesh_part.vertex_buffer_offset_in_bytes,
-                    vertex_buffer_size_in_bytes: mesh_part.vertex_buffer_size_in_bytes,
-                    index_buffer_offset_in_bytes: mesh_part.index_buffer_offset_in_bytes,
-                    index_buffer_size_in_bytes: mesh_part.index_buffer_size_in_bytes,
+                    vertex_layouts: layout_set,
+                    vertex_binding_buffer_offsets: layout_offsets,
+                    index_buffer_offset: mesh_part.index_layout.1,
+                    num_vertices: mesh_part.num_vertices,
+                    num_indices: mesh_part.num_indices,
                 })
             })
             .collect();
 
         let inner = MeshAssetInner {
             vertex_buffer,
-            index_buffer,
             asset_data: mesh_asset.clone(),
             mesh_parts,
         };
