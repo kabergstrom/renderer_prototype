@@ -4,7 +4,7 @@ use crate::game_renderer::GameRenderer;
 use crate::render_contexts::{RenderJobPrepareContext, RenderJobWriteContext};
 use ash::prelude::VkResult;
 use ash::vk;
-use rafx::api_vulkan::{FrameInFlight, VkDeviceContext};
+use rafx::{RenderResources, api_vulkan::{FrameInFlight, VkDeviceContext}};
 use rafx::graph::RenderGraphExecutor;
 use rafx::nodes::{FramePacket, PrepareJobSet, RenderRegistry, RenderView};
 use rafx::resources::ResourceContext;
@@ -19,6 +19,7 @@ pub struct RenderFrameJob {
     pub shadow_map_render_views: Vec<ShadowMapRenderView>,
     pub render_registry: RenderRegistry,
     pub device_context: VkDeviceContext,
+    pub render_resources: RenderResources,
 }
 
 impl RenderFrameJob {
@@ -36,6 +37,7 @@ impl RenderFrameJob {
             self.shadow_map_render_views,
             self.render_registry,
             self.device_context,
+            self.render_resources,
         );
 
         let t1 = std::time::Instant::now();
@@ -73,6 +75,7 @@ impl RenderFrameJob {
         shadow_map_render_views: Vec<ShadowMapRenderView>,
         render_registry: RenderRegistry,
         device_context: VkDeviceContext,
+        render_resources: RenderResources,
     ) -> VkResult<Vec<vk::CommandBuffer>> {
         let t0 = std::time::Instant::now();
 
@@ -100,6 +103,7 @@ impl RenderFrameJob {
             let prepare_context =
                 RenderJobPrepareContext::new(device_context.clone(), resource_context.clone());
             prepare_job_set.prepare(
+                &render_resources,
                 &prepare_context,
                 &frame_packet,
                 &prepare_views,

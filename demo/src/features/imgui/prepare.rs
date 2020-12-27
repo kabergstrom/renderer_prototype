@@ -3,7 +3,7 @@ use crate::features::imgui::{ExtractedImGuiData, ImGuiRenderFeature, ImGuiUnifor
 use crate::phases::UiRenderPhase;
 use crate::render_contexts::{RenderJobPrepareContext, RenderJobWriteContext};
 use ash::vk;
-use rafx::api_vulkan::VkBuffer;
+use rafx::{RenderResources, api_vulkan::VkBuffer};
 use rafx::nodes::{
     FeatureCommandWriter, FeatureSubmitNodes, FramePacket, PrepareJob, RenderFeature,
     RenderFeatureIndex, RenderView, ViewSubmitNodes,
@@ -36,6 +36,7 @@ impl ImGuiPrepareJobImpl {
 impl PrepareJob<RenderJobPrepareContext, RenderJobWriteContext> for ImGuiPrepareJobImpl {
     fn prepare(
         self: Box<Self>,
+        _render_resources: &RenderResources,
         prepare_context: &RenderJobPrepareContext,
         _frame_packet: &FramePacket,
         views: &[&RenderView],

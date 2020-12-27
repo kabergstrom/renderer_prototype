@@ -9,7 +9,7 @@ use crate::render_contexts::{RenderJobPrepareContext, RenderJobWriteContext};
 use ash::vk;
 use fnv::FnvHashMap;
 use glam::Vec3;
-use rafx::api_vulkan::VkBuffer;
+use rafx::{RenderResources, api_vulkan::VkBuffer};
 use rafx::nodes::{
     FeatureCommandWriter, FeatureSubmitNodes, FramePacket, PrepareJob, RenderFeature,
     RenderFeatureIndex, RenderView, ViewSubmitNodes,
@@ -61,6 +61,7 @@ impl SpritePrepareJob {
 impl PrepareJob<RenderJobPrepareContext, RenderJobWriteContext> for SpritePrepareJob {
     fn prepare(
         self: Box<Self>,
+        _render_resources: &RenderResources,
         prepare_context: &RenderJobPrepareContext,
         frame_packet: &FramePacket,
         views: &[&RenderView],

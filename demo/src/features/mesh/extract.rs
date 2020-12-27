@@ -1,4 +1,4 @@
-use crate::components::MeshComponent;
+use crate::{components::MeshComponent, game_renderer::InvalidResources};
 use crate::components::{
     DirectionalLightComponent, PointLightComponent, PositionComponent, SpotLightComponent,
 };
@@ -12,16 +12,13 @@ use crate::render_contexts::{
     RenderJobExtractContext, RenderJobPrepareContext, RenderJobWriteContext,
 };
 use legion::*;
-use rafx::base::slab::RawSlabKey;
+use rafx::{RenderResources, base::slab::RawSlabKey};
 use rafx::nodes::{
     ExtractJob, FramePacket, PrepareJob, RenderFeature, RenderFeatureIndex, RenderView,
 };
 use rafx::resources::{ImageViewResource, ResourceArc};
 
 pub struct MeshExtractJob {
-    pub(super) shadow_map_data: ShadowMapData,
-    pub(super) invalid_image: ResourceArc<ImageViewResource>,
-    pub(super) invalid_cube_map_image: ResourceArc<ImageViewResource>,
 }
 
 impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWriteContext>
@@ -37,6 +34,7 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
 
     fn extract(
         self: Box<Self>,
+        _render_resources: &RenderResources,
         extract_context: &RenderJobExtractContext,
         frame_packet: &FramePacket,
         _views: &[&RenderView],
@@ -131,11 +129,8 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
         Box::new(MeshPrepareJob {
             extracted_frame_node_mesh_data,
             directional_lights,
-            shadow_map_data: self.shadow_map_data,
             point_lights,
             spot_lights,
-            invalid_image: self.invalid_image,
-            invalid_cube_map_image: self.invalid_cube_map_image,
         })
     }
 }

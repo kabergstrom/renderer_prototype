@@ -2,10 +2,12 @@ use crate::{
     FeatureCommandWriter, FeatureSubmitNodes, FramePacket, MergedFrameSubmitNodes,
     PreparedRenderData, RenderFeatureIndex, RenderRegistry, RenderView,
 };
+use rafx_base::resources::ResourceMap as RenderResources;
 
 pub trait PrepareJob<PrepareContextT, WriteContextT>: Send {
     fn prepare(
         self: Box<Self>,
+        render_resources: &RenderResources,
         prepare_context: &PrepareContextT,
         frame_packet: &FramePacket,
         views: &[&RenderView],
@@ -29,6 +31,7 @@ impl<PrepareContextT, WriteContextT> PrepareJobSet<PrepareContextT, WriteContext
 
     pub fn prepare(
         self,
+        render_resources: &RenderResources,
         prepare_context: &PrepareContextT,
         frame_packet: &FramePacket,
         views: &[&RenderView],
@@ -39,7 +42,7 @@ impl<PrepareContextT, WriteContextT> PrepareJobSet<PrepareContextT, WriteContext
 
         //TODO: Kick these to happen in parallel
         for prepare_job in self.prepare_jobs {
-            let (writer, submit_nodes) = prepare_job.prepare(prepare_context, frame_packet, views);
+            let (writer, submit_nodes) = prepare_job.prepare(render_resources, prepare_context, frame_packet, views);
 
             feature_command_writers.push(writer);
             all_submit_nodes.push(submit_nodes);

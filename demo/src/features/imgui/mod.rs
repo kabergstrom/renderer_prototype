@@ -16,16 +16,8 @@ mod extract;
 mod prepare;
 mod write;
 
-pub fn create_imgui_extract_job(
-    extents: Extent2D,
-    imgui_material: &Handle<MaterialAsset>,
-    font_atlas: ResourceArc<ImageViewResource>,
-) -> Box<dyn ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWriteContext>> {
-    Box::new(ImGuiExtractJobImpl::new(
-        extents,
-        imgui_material,
-        font_atlas,
-    ))
+pub fn create_imgui_extract_job() -> Box<dyn ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWriteContext>> {
+    Box::new(ImGuiExtractJobImpl::new())
 }
 
 /// Per-pass "global" data

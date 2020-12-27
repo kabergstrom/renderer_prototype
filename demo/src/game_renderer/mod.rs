@@ -25,7 +25,7 @@ use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 
 mod static_resources;
-use static_resources::GameRendererStaticResources;
+pub use static_resources::GameRendererStaticResources;
 
 mod render_thread;
 use render_thread::RenderThread;
@@ -87,10 +87,17 @@ pub fn matrix_reverse_z(proj: glam::Mat4) -> glam::Mat4 {
     reverse_mat * proj
 }
 
+#[derive(Clone)]
+pub struct ImguiFontAtlas(pub ResourceArc<ImageViewResource>);
+#[derive(Clone)]
+pub struct InvalidResources {
+    pub invalid_image: ResourceArc<ImageViewResource>,
+    pub invalid_cube_map_image: ResourceArc<ImageViewResource>,
+}
+
 pub struct GameRendererInner {
-    imgui_font_atlas_image_view: ResourceArc<ImageViewResource>,
-    invalid_image: ResourceArc<ImageViewResource>,
-    invalid_cube_map_image: ResourceArc<ImageViewResource>,
+    imgui_font_atlas_image_view: ImguiFontAtlas,
+    invalid_resources: InvalidResources,
 
     // Everything that is loaded all the time
     static_resources: GameRendererStaticResources,
@@ -176,9 +183,11 @@ impl GameRenderer {
         let render_thread = RenderThread::start();
 
         let renderer = GameRendererInner {
-            imgui_font_atlas_image_view,
-            invalid_image,
-            invalid_cube_map_image,
+            imgui_font_atlas_image_view: ImguiFontAtlas(imgui_font_atlas_image_view),
+            invalid_resources: InvalidResources { 
+                invalid_image,
+                invalid_cube_map_image
+            },
             static_resources: game_renderer_resources,
             swapchain_resources: None,
 
@@ -426,6 +435,7 @@ impl GameRenderer {
         let device_context = resources.get::<VkDeviceContext>().unwrap().clone();
 
         let mut asset_manager_fetch = resources.get_mut::<AssetManager>().unwrap();
+        let mut render_resources = rafx::base::resources::ResourceMap::new();
         let asset_manager = &mut *asset_manager_fetch;
 
         //
@@ -439,6 +449,9 @@ impl GameRenderer {
         let game_renderer_inner = &mut *guard;
 
         let static_resources = &game_renderer_inner.static_resources;
+        render_resources.insert(static_resources.clone());
+        render_resources.insert(game_renderer_inner.invalid_resources.clone());
+        render_resources.insert(game_renderer_inner.imgui_font_atlas_image_view.clone());
 
         //
         // Swapchain Status
@@ -448,6 +461,7 @@ impl GameRenderer {
             swapchain_resources.swapchain_images[frame_in_flight.present_index() as usize].clone();
         let swapchain_surface_info = swapchain_resources.swapchain_surface_info.clone();
         let swapchain_info = swapchain_resources.swapchain_info.clone();
+        render_resources.insert(swapchain_info.clone());
 
         let render_view_set = RenderViewSet::default();
 
@@ -667,6 +681,52 @@ impl GameRenderer {
             }
         };
 
+        //
+        // Extract Jobs
+        //
+        let frame_packet = frame_packet_builder.build();
+        let extract_job_set = {
+            let mut extract_job_set = ExtractJobSet::new();
+
+            //TODO: Is it possible to know up front what extract jobs aren't necessary based on
+            // renderphases?
+
+            // Sprites
+            extract_job_set.add_job(create_sprite_extract_job());
+
+            // Meshes
+            extract_job_set.add_job(create_mesh_extract_job());
+
+            // Debug 3D
+            extract_job_set.add_job(create_debug3d_extract_job());
+
+            extract_job_set.add_job(create_imgui_extract_job());
+
+            extract_job_set
+        };
+
+        let prepare_job_set = {
+            profiling::scope!("renderer extract");
+            let extract_context = RenderJobExtractContext::new(&world, &resources, asset_manager);
+
+            let mut extract_views = Vec::default();
+            extract_views.push(&main_view);
+            for shadow_map_view in &shadow_map_render_views {
+                match shadow_map_view {
+                    ShadowMapRenderView::Single(view) => {
+                        extract_views.push(view);
+                    }
+                    ShadowMapRenderView::Cube(views) => {
+                        for view in views {
+                            extract_views.push(view);
+                        }
+                    }
+                }
+            }
+
+            extract_job_set.extract(&render_resources, &extract_context, &frame_packet, &extract_views)
+        };
+
         //TODO: This is now possible to run on the render thread
         let render_graph = render_graph::build_render_graph(
             &device_context,
@@ -692,64 +752,8 @@ impl GameRenderer {
             shadow_map_render_views: shadow_map_render_views.clone(),
             shadow_map_image_views: render_graph.shadow_map_image_views.clone(),
         };
+        render_resources.insert(shadow_map_data);
 
-        //
-        // Extract Jobs
-        //
-        let frame_packet = frame_packet_builder.build();
-        let extract_job_set = {
-            let mut extract_job_set = ExtractJobSet::new();
-
-            //TODO: Is it possible to know up front what extract jobs aren't necessary based on
-            // renderphases?
-
-            // Sprites
-            extract_job_set.add_job(create_sprite_extract_job(
-                guard.static_resources.sprite_material.clone(),
-            ));
-
-            // Meshes
-            extract_job_set.add_job(create_mesh_extract_job(
-                shadow_map_data,
-                guard.invalid_image.clone(),
-                guard.invalid_cube_map_image.clone(),
-            ));
-
-            // Debug 3D
-            extract_job_set.add_job(create_debug3d_extract_job(
-                &guard.static_resources.debug3d_material,
-            ));
-
-            extract_job_set.add_job(create_imgui_extract_job(
-                swapchain_surface_info.extents,
-                &guard.static_resources.imgui_material,
-                guard.imgui_font_atlas_image_view.clone(),
-            ));
-
-            extract_job_set
-        };
-
-        let prepare_job_set = {
-            profiling::scope!("renderer extract");
-            let extract_context = RenderJobExtractContext::new(&world, &resources, asset_manager);
-
-            let mut extract_views = Vec::default();
-            extract_views.push(&main_view);
-            for shadow_map_view in &shadow_map_render_views {
-                match shadow_map_view {
-                    ShadowMapRenderView::Single(view) => {
-                        extract_views.push(view);
-                    }
-                    ShadowMapRenderView::Cube(views) => {
-                        for view in views {
-                            extract_views.push(view);
-                        }
-                    }
-                }
-            }
-
-            extract_job_set.extract(&extract_context, &frame_packet, &extract_views)
-        };
 
         let game_renderer = game_renderer.clone();
 
@@ -763,6 +767,7 @@ impl GameRenderer {
             shadow_map_render_views,
             render_registry,
             device_context,
+            render_resources,
         };
 
         Ok(prepared_frame)

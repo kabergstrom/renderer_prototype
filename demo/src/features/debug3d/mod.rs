@@ -18,9 +18,8 @@ mod write;
 pub use debug3d_resource::*;
 
 pub fn create_debug3d_extract_job(
-    debug3d_material: &Handle<MaterialAsset>
 ) -> Box<dyn ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWriteContext>> {
-    Box::new(Debug3dExtractJob::new(debug3d_material))
+    Box::new(Debug3dExtractJob::new())
 }
 
 pub type Debug3dUniformBufferObject = shaders::debug_vert::PerFrameUboUniform;

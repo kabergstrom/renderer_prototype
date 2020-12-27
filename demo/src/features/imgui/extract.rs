@@ -1,4 +1,4 @@
-use crate::features::imgui::prepare::ImGuiPrepareJobImpl;
+use crate::{features::imgui::prepare::ImGuiPrepareJobImpl, game_renderer::{GameRendererStaticResources, ImguiFontAtlas}};
 use crate::features::imgui::{ExtractedImGuiData, ImGuiRenderFeature, ImGuiUniformBufferObject};
 use crate::imgui_support::Sdl2ImguiManager;
 use crate::render_contexts::{
@@ -6,7 +6,7 @@ use crate::render_contexts::{
 };
 use ash::vk::Extent2D;
 use atelier_assets::loader::handle::Handle;
-use rafx::assets::MaterialAsset;
+use rafx::{RenderResources, api_vulkan::SwapchainInfo, assets::MaterialAsset};
 use rafx::nodes::{
     ExtractJob, FramePacket, PrepareJob, RenderFeature, RenderFeatureIndex, RenderView,
 };
@@ -38,22 +38,11 @@ pub fn orthographic_rh_gl(
 }
 
 pub struct ImGuiExtractJobImpl {
-    extents: Extent2D,
-    imgui_material: Handle<MaterialAsset>,
-    font_atlas: ResourceArc<ImageViewResource>,
 }
 
 impl ImGuiExtractJobImpl {
-    pub fn new(
-        extents: Extent2D,
-        imgui_material: &Handle<MaterialAsset>,
-        font_atlas: ResourceArc<ImageViewResource>,
-    ) -> Self {
-        ImGuiExtractJobImpl {
-            extents,
-            imgui_material: imgui_material.clone(),
-            font_atlas,
-        }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -62,6 +51,7 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
 {
     fn extract(
         self: Box<Self>,
+        render_resources: &RenderResources,
         extract_context: &RenderJobExtractContext,
         _frame_packet: &FramePacket,
         _views: &[&RenderView],
@@ -78,27 +68,30 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
             None => [1.0, 1.0],
         };
 
+        let swapchain_info = render_resources.fetch::<SwapchainInfo>();
         let view_proj = orthographic_rh_gl(
             0.0,
-            self.extents.width as f32 / framebuffer_scale[0],
+            swapchain_info.extents.width as f32 / framebuffer_scale[0],
             0.0,
-            self.extents.height as f32 / framebuffer_scale[1],
+            swapchain_info.extents.height as f32 / framebuffer_scale[1],
             -100.0,
             100.0,
         );
 
+        let imgui_material = &render_resources.fetch::<GameRendererStaticResources>().imgui_material;
         let imgui_material_pass = extract_context
             .asset_manager
-            .get_material_pass_by_index(&self.imgui_material, 0)
+            .get_material_pass_by_index(imgui_material, 0)
             .unwrap();
 
+        let font_atlas = &render_resources.fetch::<ImguiFontAtlas>().0;
         let view_ubo = ImGuiUniformBufferObject { mvp: view_proj };
 
         Box::new(ImGuiPrepareJobImpl::new(
             ExtractedImGuiData { imgui_draw_data },
             imgui_material_pass,
             view_ubo,
-            self.font_atlas,
+            font_atlas.clone(),
         ))
     }
 
