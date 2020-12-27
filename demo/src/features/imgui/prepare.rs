@@ -36,7 +36,6 @@ impl ImGuiPrepareJobImpl {
 impl PrepareJob<RenderJobPrepareContext, RenderJobWriteContext> for ImGuiPrepareJobImpl {
     fn prepare(
         self: Box<Self>,
-        _render_resources: &RenderResources,
         prepare_context: &RenderJobPrepareContext,
         _frame_packet: &FramePacket,
         views: &[&RenderView],

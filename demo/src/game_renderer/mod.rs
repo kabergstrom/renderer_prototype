@@ -707,7 +707,7 @@ impl GameRenderer {
 
         let prepare_job_set = {
             profiling::scope!("renderer extract");
-            let extract_context = RenderJobExtractContext::new(&world, &resources, asset_manager);
+            let extract_context = RenderJobExtractContext::new(&world, &resources, &render_resources, asset_manager);
 
             let mut extract_views = Vec::default();
             extract_views.push(&main_view);
@@ -724,7 +724,7 @@ impl GameRenderer {
                 }
             }
 
-            extract_job_set.extract(&render_resources, &extract_context, &frame_packet, &extract_views)
+            extract_job_set.extract(&extract_context, &frame_packet, &extract_views)
         };
 
         //TODO: This is now possible to run on the render thread

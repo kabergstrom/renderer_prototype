@@ -34,7 +34,6 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
 
     fn extract(
         self: Box<Self>,
-        _render_resources: &RenderResources,
         extract_context: &RenderJobExtractContext,
         frame_packet: &FramePacket,
         _views: &[&RenderView],

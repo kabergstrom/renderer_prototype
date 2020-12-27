@@ -23,7 +23,6 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
 {
     fn extract(
         self: Box<Self>,
-        render_resources: &RenderResources,
         extract_context: &RenderJobExtractContext,
         _frame_packet: &FramePacket,
         _views: &[&RenderView],
@@ -35,7 +34,7 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
             .unwrap()
             .take_line_lists();
 
-        let debug3d_material = &render_resources.fetch::<GameRendererStaticResources>().debug3d_material;
+        let debug3d_material = &extract_context.render_resources.fetch::<GameRendererStaticResources>().debug3d_material;
         let debug3d_material_pass = extract_context
             .asset_manager
             .get_material_pass_by_index(&debug3d_material, 0)

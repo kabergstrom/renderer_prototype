@@ -61,7 +61,6 @@ impl SpritePrepareJob {
 impl PrepareJob<RenderJobPrepareContext, RenderJobWriteContext> for SpritePrepareJob {
     fn prepare(
         self: Box<Self>,
-        _render_resources: &RenderResources,
         prepare_context: &RenderJobPrepareContext,
         frame_packet: &FramePacket,
         views: &[&RenderView],

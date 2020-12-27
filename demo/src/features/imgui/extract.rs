@@ -51,7 +51,6 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
 {
     fn extract(
         self: Box<Self>,
-        render_resources: &RenderResources,
         extract_context: &RenderJobExtractContext,
         _frame_packet: &FramePacket,
         _views: &[&RenderView],
@@ -68,7 +67,7 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
             None => [1.0, 1.0],
         };
 
-        let swapchain_info = render_resources.fetch::<SwapchainInfo>();
+        let swapchain_info = extract_context.render_resources.fetch::<SwapchainInfo>();
         let view_proj = orthographic_rh_gl(
             0.0,
             swapchain_info.extents.width as f32 / framebuffer_scale[0],
@@ -78,13 +77,13 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
             100.0,
         );
 
-        let imgui_material = &render_resources.fetch::<GameRendererStaticResources>().imgui_material;
+        let imgui_material = &extract_context.render_resources.fetch::<GameRendererStaticResources>().imgui_material;
         let imgui_material_pass = extract_context
             .asset_manager
             .get_material_pass_by_index(imgui_material, 0)
             .unwrap();
 
-        let font_atlas = &render_resources.fetch::<ImguiFontAtlas>().0;
+        let font_atlas = &extract_context.render_resources.fetch::<ImguiFontAtlas>().0;
         let view_ubo = ImGuiUniformBufferObject { mvp: view_proj };
 
         Box::new(ImGuiPrepareJobImpl::new(

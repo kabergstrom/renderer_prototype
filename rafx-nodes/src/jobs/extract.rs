@@ -4,7 +4,6 @@ use rafx_base::resources::ResourceMap as RenderResources;
 pub trait ExtractJob<ExtractContextT, PrepareContextT, WriteContextT> {
     fn extract(
         self: Box<Self>,
-        render_resources: &RenderResources,
         extract_context: &ExtractContextT,
         frame_packet: &FramePacket,
         views: &[&RenderView],
@@ -44,7 +43,6 @@ impl<ExtractContextT, PrepareContextT, WriteContextT>
 
     pub fn extract(
         self,
-        render_resources: &RenderResources,
         extract_context: &ExtractContextT,
         frame_packet: &FramePacket,
         views: &[&RenderView],
@@ -55,7 +53,7 @@ impl<ExtractContextT, PrepareContextT, WriteContextT>
         for extract_job in self.extract_jobs {
             log::trace!("Start job {}", extract_job.feature_debug_name());
 
-            let prepare_job = extract_job.extract(render_resources, extract_context, frame_packet, views);
+            let prepare_job = extract_job.extract(extract_context, frame_packet, views);
             prepare_jobs.push(prepare_job);
         }
 

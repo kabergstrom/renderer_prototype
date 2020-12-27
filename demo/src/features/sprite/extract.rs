@@ -27,7 +27,6 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
 {
     fn extract(
         self: Box<Self>,
-        render_resources: &RenderResources,
         extract_context: &RenderJobExtractContext,
         frame_packet: &FramePacket,
         _views: &[&RenderView],
@@ -81,7 +80,7 @@ impl ExtractJob<RenderJobExtractContext, RenderJobPrepareContext, RenderJobWrite
             extracted_frame_node_sprite_data.push(extracted_frame_node);
         }
 
-        let static_resources = render_resources.fetch::<GameRendererStaticResources>();
+        let static_resources = extract_context.render_resources.fetch::<GameRendererStaticResources>();
         // For now just grab pass 0
         let sprite_material = extract_context
             .asset_manager

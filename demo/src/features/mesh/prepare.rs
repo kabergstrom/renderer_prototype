@@ -47,7 +47,6 @@ pub struct MeshPrepareJob {
 impl PrepareJob<RenderJobPrepareContext, RenderJobWriteContext> for MeshPrepareJob {
     fn prepare(
         self: Box<Self>,
-        render_resources: &RenderResources,
         prepare_context: &RenderJobPrepareContext,
         frame_packet: &FramePacket,
         views: &[&RenderView],
@@ -56,8 +55,8 @@ impl PrepareJob<RenderJobPrepareContext, RenderJobWriteContext> for MeshPrepareJ
         FeatureSubmitNodes,
     ) {
         profiling::scope!("Mesh Prepare");
-        let invalid_resources = render_resources.fetch::<InvalidResources>();
-        let shadow_map_data = render_resources.fetch::<ShadowMapData>();
+        let invalid_resources = prepare_context.render_resources.fetch::<InvalidResources>();
+        let shadow_map_data = prepare_context.render_resources.fetch::<ShadowMapData>();
 
         let mut descriptor_set_allocator = prepare_context
             .resource_context
