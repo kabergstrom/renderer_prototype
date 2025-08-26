@@ -1,7 +1,7 @@
 use crate::{
     RafxBuffer, RafxBufferDef, RafxCommandBuffer, RafxCommandBufferDef, RafxCommandPool,
     RafxCommandPoolDef, RafxDeviceContext, RafxError, RafxFence, RafxFenceStatus, RafxMemoryUsage,
-    RafxQueue, RafxQueueType, RafxResourceType, RafxResult,
+    RafxQueue, RafxQueueType, RafxResourceType, RafxResult, RafxSemaphore,
 };
 use crossbeam_channel::{Receiver, Sender};
 use std::ops::{Deref, DerefMut};
@@ -229,6 +229,7 @@ pub struct RafxUpload {
 
     writable: bool,
     fence: RafxFence,
+    semaphore: RafxSemaphore,
 
     buffer_begin: *mut u8,
     buffer_end: *mut u8,
@@ -279,6 +280,7 @@ impl RafxUpload {
         };
 
         let fence = device_context.create_fence()?;
+        let semaphore = device_context.create_semaphore()?;
 
         let upload = RafxUpload {
             queue: queue.clone(),
@@ -290,6 +292,7 @@ impl RafxUpload {
             buffer_begin,
             buffer_end,
             buffer_write_pointer,
+            semaphore,
         };
 
         Ok(upload)
@@ -373,11 +376,19 @@ impl RafxUpload {
         &self.queue
     }
 
+    pub fn semaphore(&self) -> &RafxSemaphore {
+        &self.semaphore
+    }
+
     pub fn submit(&mut self) -> RafxResult<()> {
         if self.writable {
             self.command_buffer.end()?;
-            self.queue
-                .submit(&[&self.command_buffer], &[], &[], Some(&self.fence))?;
+            self.queue.submit(
+                &[&self.command_buffer],
+                &[],
+                &[&self.semaphore],
+                Some(&self.fence),
+            )?;
             self.writable = false;
         }
 

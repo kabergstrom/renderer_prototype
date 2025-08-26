@@ -119,12 +119,13 @@ impl RafxPresentableFrame {
         mut self,
         queue: &RafxQueue,
         command_buffers: &[&RafxCommandBuffer],
+        wait_semaphores: &[&RafxSemaphore],
     ) -> RafxResult<RafxPresentSuccessResult> {
         log::trace!(
             "Calling RafxPresentableFrame::present with {} command buffers",
             command_buffers.len()
         );
-        let result = self.do_present(queue, command_buffers);
+        let result = self.do_present(queue, command_buffers, wait_semaphores);
 
         // Let the shared state arc drop, this will unblock the next frame
         let shared_state = self.shared_state.take().unwrap();
@@ -139,6 +140,7 @@ impl RafxPresentableFrame {
         mut self,
         queue: &RafxQueue,
         error: RafxError,
+        wait_semaphores: &[&RafxSemaphore],
     ) {
         log::warn!(
             "Calling RafxPresentableFrame::present_with_error {:?}",
@@ -151,7 +153,7 @@ impl RafxPresentableFrame {
 
         //TODO: Might be able to do this without presenting by having command buffers that can be
         // submitted that trigger the semaphore.
-        let _ = self.do_present(queue, &mut []);
+        let _ = self.do_present(queue, &mut [], wait_semaphores);
 
         // Let the shared state arc drop, this will unblock the next frame
         let shared_state = self.shared_state.take().unwrap();
@@ -162,6 +164,7 @@ impl RafxPresentableFrame {
         &mut self,
         queue: &RafxQueue,
         command_buffers: &[&RafxCommandBuffer],
+        wait_semaphores: &[&RafxSemaphore],
     ) -> RafxResult<RafxPresentSuccessResult> {
         // A present can only occur using the result from the previous acquire_next_image call
         let shared_state = self.shared_state.as_ref().unwrap();
@@ -169,12 +172,16 @@ impl RafxPresentableFrame {
         assert!(self.sync_frame_index == sync_frame_index);
 
         let frame_fence = &shared_state.in_flight_fences[sync_frame_index];
-        let wait_semaphores = [&shared_state.image_available_semaphores[sync_frame_index]];
+        // let wait_semaphores = [&shared_state.image_available_semaphores[sync_frame_index]];
+        // TODO don't allocate here
+        let mut submit_wait_semaphores =
+            vec![&shared_state.image_available_semaphores[sync_frame_index]];
+        submit_wait_semaphores.extend_from_slice(wait_semaphores);
         let signal_semaphores = [&shared_state.render_finished_semaphores[sync_frame_index]];
 
         queue.submit(
             command_buffers,
-            &wait_semaphores,
+            &submit_wait_semaphores,
             &signal_semaphores,
             Some(frame_fence),
         )?;
