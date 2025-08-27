@@ -1,3 +1,5 @@
+use spirv_cross2::compile::CompiledArtifact;
+use spirv_cross2::targets::Hlsl;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
@@ -21,8 +23,7 @@ use rafx_api::{
     RafxShaderPackageGles3, RafxShaderPackageMetal, RafxShaderPackageVulkan,
 };
 use shaderc::{CompilationArtifact, Compiler, ShaderKind};
-use spirv_cross::glsl::Target;
-use spirv_cross::spirv::{Ast, ShaderResources};
+use spirv_cross2::reflect::ShaderResources;
 
 mod codegen;
 
@@ -589,7 +590,7 @@ struct CompileParameters<'a> {
 struct CompileResult {
     unoptimized_spv: CompilationArtifact,
     parsed_declarations: ParseDeclarationsResult,
-    ast: Ast<Target>,
+    artifact: CompiledArtifact<spirv_cross2::targets::Glsl>,
     user_types: FnvHashMap<String, UserType>,
     builtin_types: FnvHashMap<String, TypeAlignmentInfo>,
     reflection_data: Option<ShaderProcessorRefectionData>,
@@ -660,7 +661,7 @@ fn compile_glsl(
     // Read the unoptimized spv into spirv_cross so that we can grab reflection data
     //
     log::trace!("{:?}: read spirv_cross module", parameters.glsl_file);
-    let spirv_cross_module = spirv_cross::spirv::Module::from_words(unoptimized_spv.as_binary());
+    let spirv_cross_module = spirv_cross2::Module::from_words(unoptimized_spv.as_binary());
 
     //
     // Parse the declarations that were extracted from the source file
@@ -675,10 +676,10 @@ fn compile_glsl(
     }
 
     log::trace!("{:?}: generate spirv_cross ast", parameters.glsl_file);
-    let mut spirv_cross_glsl_options = spirv_cross::glsl::CompilerOptions::default();
+    let mut spirv_cross_glsl_options = spirv_cross2::compile::glsl::CompilerOptions::default();
     spirv_cross_glsl_options.vulkan_semantics = true;
-    let mut ast = spirv_cross::spirv::Ast::<spirv_cross::glsl::Target>::parse(&spirv_cross_module)?;
-    ast.set_compiler_options(&spirv_cross_glsl_options)?;
+    let compiler = spirv_cross2::Compiler::new(spirv_cross_module)?;
+    let artifact = compiler.compile(&spirv_cross_glsl_options)?;
 
     log::trace!("{:?}: generate shader types", parameters.glsl_file);
     let user_types = shader_types::create_user_type_lookup(&parsed_declarations)?;
@@ -689,7 +690,7 @@ fn compile_glsl(
         Some(reflect::reflect_data(
             &builtin_types,
             &user_types,
-            &ast,
+            &artifact,
             &parsed_declarations,
             parameters.require_semantics,
         )?)
@@ -700,7 +701,7 @@ fn compile_glsl(
     Ok(CompileResult {
         unoptimized_spv,
         parsed_declarations,
-        ast,
+        artifact,
         user_types,
         builtin_types,
         reflection_data: reflected_data,
@@ -763,23 +764,24 @@ fn cross_compile_to_dx12(
         src
     } else {
         let spirv_cross_module =
-            spirv_cross::spirv::Module::from_words(compile_result.unoptimized_spv.as_binary());
+            spirv_cross2::Module::from_words(compile_result.unoptimized_spv.as_binary());
 
-        let mut hlsl_ast =
-            spirv_cross::spirv::Ast::<spirv_cross::hlsl::Target>::parse(&spirv_cross_module)?;
-        let mut spirv_cross_hlsl_options = spirv_cross::hlsl::CompilerOptions::default();
-        spirv_cross_hlsl_options.shader_model = spirv_cross::hlsl::ShaderModel::V6_0;
+        let mut spirv_cross_hlsl_options = spirv_cross2::compile::hlsl::CompilerOptions::default();
+        spirv_cross_hlsl_options.shader_model =
+            spirv_cross2::compile::hlsl::HlslShaderModel::ShaderModel6_0;
         spirv_cross_hlsl_options.flatten_matrix_vertex_input_semantics = true;
         //DX12TODO: We want something more fine-grained than this
-        spirv_cross_hlsl_options.force_storage_buffer_as_uav = true;
+        // spirv_cross_hlsl_options.force_storage_buffer_as_uav = true;
+        let mut compiler: spirv_cross2::Compiler<Hlsl> =
+            spirv_cross2::Compiler::new(spirv_cross_module)?;
 
-        for assignment in &compile_result
+        for (execution_model, assignment, bind_target) in &compile_result
             .reflection_data
             .as_ref()
             .unwrap()
             .hlsl_register_assignments
         {
-            hlsl_ast.add_resource_binding(assignment)?;
+            compiler.add_resource_binding(*execution_model, *assignment, bind_target)?;
         }
 
         for remap in &compile_result
@@ -791,13 +793,11 @@ fn cross_compile_to_dx12(
             // We require semantics to produce HLSL, an error should be thrown earlier if they are missing
             assert!(!remap.semantic.is_empty());
             if !remap.semantic.is_empty() {
-                hlsl_ast.add_vertex_attribute_remap(remap)?;
+                compiler.remap_vertex_attribute(remap.location, remap.semantic.as_str())?;
             }
         }
 
-        hlsl_ast.set_compiler_options(&spirv_cross_hlsl_options)?;
-
-        hlsl_ast.compile()?
+        compiler.compile(&spirv_cross_hlsl_options)?.to_string()
     };
 
     Ok(CrossCompileOutputDx12 {
@@ -822,13 +822,12 @@ fn cross_compile_to_metal(
         src
     } else {
         let spirv_cross_module =
-            spirv_cross::spirv::Module::from_words(compile_result.unoptimized_spv.as_binary());
+            spirv_cross2::Module::from_words(compile_result.unoptimized_spv.as_binary());
 
-        let mut msl_ast =
-            spirv_cross::spirv::Ast::<spirv_cross::msl::Target>::parse(&spirv_cross_module)?;
-        let mut spirv_cross_msl_options = spirv_cross::msl::CompilerOptions::default();
-        spirv_cross_msl_options.version = spirv_cross::msl::Version::V2_1;
-        spirv_cross_msl_options.enable_argument_buffers = true;
+        let compiler = spirv_cross2::Compiler::new(spirv_cross_module)?;
+        let mut spirv_cross_msl_options = spirv_cross2::compile::msl::CompilerOptions::default();
+        spirv_cross_msl_options.version = spirv_cross2::compile::msl::MslVersion::new(2, 1, 0);
+        spirv_cross_msl_options.argument_buffers = true;
         spirv_cross_msl_options.force_active_argument_buffer_resources = true;
         //TODO: Add equivalent to --msl-no-clip-distance-user-varying
 
@@ -848,8 +847,7 @@ fn cross_compile_to_metal(
             .msl_const_samplers
             .clone();
 
-        msl_ast.set_compiler_options(&spirv_cross_msl_options)?;
-        msl_ast.compile()?
+        compiler.compile(&spirv_cross_msl_options)?.to_string()
     };
 
     Ok(CrossCompileOutputMetal {
@@ -874,27 +872,25 @@ fn cross_compile_to_gles3(
         src
     } else {
         let spirv_cross_module =
-            spirv_cross::spirv::Module::from_words(compile_result.unoptimized_spv.as_binary());
+            spirv_cross2::Module::from_words(compile_result.unoptimized_spv.as_binary());
 
-        let mut gles3_ast =
-            spirv_cross::spirv::Ast::<spirv_cross::glsl::Target>::parse(&spirv_cross_module)?;
-        let mut spirv_cross_gles3_options = spirv_cross::glsl::CompilerOptions::default();
-        spirv_cross_gles3_options.version = spirv_cross::glsl::Version::V3_00Es;
+        let mut spirv_cross_gles3_options = spirv_cross2::compile::glsl::CompilerOptions::default();
+        spirv_cross_gles3_options.version = spirv_cross2::compile::glsl::GlslVersion::Glsl300Es;
         spirv_cross_gles3_options.vulkan_semantics = false;
         spirv_cross_gles3_options.vertex.transform_clip_space = true;
         spirv_cross_gles3_options.vertex.invert_y = true;
 
-        let shader_resources = compile_result.ast.get_shader_resources()?;
+        let shader_resources = compile_result.artifact.shader_resources()?;
+        let mut compiler = spirv_cross2::Compiler::new(spirv_cross_module)?;
 
-        rename_gl_samplers(&mut compile_result.reflection_data, &mut gles3_ast)?;
+        rename_gl_samplers(&mut compile_result.reflection_data, &mut compiler)?;
         rename_gl_in_out_attributes(
             compile_parameters.shader_kind,
-            &mut gles3_ast,
+            &mut compiler,
             &shader_resources,
         )?;
 
-        gles3_ast.set_compiler_options(&spirv_cross_gles3_options)?;
-        gles3_ast.compile()?
+        compiler.compile(&spirv_cross_gles3_options)?.to_string()
     };
 
     Ok(CrossCompileOutputGles3 {
@@ -919,38 +915,38 @@ fn cross_compile_to_gles2(
         src
     } else {
         let spirv_cross_module =
-            spirv_cross::spirv::Module::from_words(compile_result.unoptimized_spv.as_binary());
+            spirv_cross2::Module::from_words(compile_result.unoptimized_spv.as_binary());
 
-        let mut gles2_ast =
-            spirv_cross::spirv::Ast::<spirv_cross::glsl::Target>::parse(&spirv_cross_module)?;
-        let mut spirv_cross_gles2_options = spirv_cross::glsl::CompilerOptions::default();
-        spirv_cross_gles2_options.version = spirv_cross::glsl::Version::V1_00Es;
+        let mut spirv_cross_gles2_options = spirv_cross2::compile::glsl::CompilerOptions::default();
+        spirv_cross_gles2_options.version = spirv_cross2::compile::glsl::GlslVersion::Glsl100Es;
         spirv_cross_gles2_options.vulkan_semantics = false;
         spirv_cross_gles2_options.vertex.transform_clip_space = true;
         spirv_cross_gles2_options.vertex.invert_y = true;
+        let mut compiler = spirv_cross2::Compiler::new(spirv_cross_module)?;
 
-        let shader_resources = compile_result.ast.get_shader_resources()?;
+        let shader_resources = compile_result.artifact.get_shader_resources()?;
 
         // Rename uniform blocks to be consistent with how they would appear in GL ES 3.0. This way
         // we can consistently use the same GL name across both backends
         for resource in &shader_resources.uniform_buffers {
-            let block_name = gles2_ast.get_name(resource.base_type_id)?;
-            gles2_ast.set_name(
-                resource.base_type_id,
-                &format!("{}_UniformBlock", block_name),
-            )?;
-            gles2_ast.set_name(resource.id, &block_name)?;
+            let block_name = compiler.name(resource.base_type_id)?;
+            if let Some(block_name) = block_name {
+                compiler.set_name(
+                    resource.base_type_id,
+                    format!("{}_UniformBlock", block_name),
+                )?;
+                compiler.set_name(resource.id, block_name)?;
+            }
         }
 
-        rename_gl_samplers(&mut compile_result.reflection_data, &mut gles2_ast)?;
+        rename_gl_samplers(&mut compile_result.reflection_data, &mut compiler)?;
         rename_gl_in_out_attributes(
             compile_parameters.shader_kind,
-            &mut gles2_ast,
+            &mut compiler,
             &shader_resources,
         )?;
 
-        gles2_ast.set_compiler_options(&spirv_cross_gles2_options)?;
-        gles2_ast.compile()?
+        compiler.compile(&spirv_cross_gles2_options)?.to_string()
     };
 
     Ok(CrossCompileOutputGles2 {
@@ -969,25 +965,25 @@ fn write_output_file<C: AsRef<[u8]>>(
 
 fn rename_gl_samplers(
     reflected_data: &mut Option<ShaderProcessorRefectionData>,
-    ast: &mut Ast<Target>,
+    compiler: &mut spirv_cross2::Compiler<spirv_cross2::targets::Glsl>,
 ) -> Result<(), Box<dyn Error>> {
-    ast.build_combined_image_samplers()?;
+    compiler.build_combined_image_samplers(compiler.create_dummy_sampler_for_combined_images()?)?;
 
     let mut all_combined_textures = FnvHashSet::default();
-    for remap in ast.get_combined_image_samplers()? {
-        let texture_name = ast.get_name(remap.image_id)?;
-        let sampler_name = ast.get_name(remap.sampler_id)?;
+    for remap in compiler.combined_image_samplers()? {
+        let texture_name = compiler.name(remap.image_id)?;
+        let sampler_name = compiler.name(remap.sampler_id)?;
 
         let already_sampled = !all_combined_textures.insert(remap.image_id);
         if already_sampled {
-            Err(format!("The texture {} is being read by multiple samplers. This is not supported in GL ES 2.0", texture_name))?;
+            Err(format!("The texture {:?} is being read by multiple samplers. This is not supported in GL ES 2.0", texture_name))?;
         }
 
         if let Some(reflected_data) = reflected_data {
             reflected_data.set_gl_sampler_name(&texture_name, &sampler_name);
         }
 
-        ast.set_name(remap.combined_id, &texture_name)?
+        compiler.set_name(remap.combined_id, &texture_name)?
     }
 
     Ok(())
@@ -995,14 +991,14 @@ fn rename_gl_samplers(
 
 fn rename_gl_in_out_attributes(
     shader_kind: ShaderKind,
-    ast: &mut Ast<Target>,
+    compiler: &mut spirv_cross2::Compiler<spirv_cross2::targets::Glsl>,
     shader_resources: &ShaderResources,
 ) -> Result<(), Box<dyn Error>> {
     if normalize_shader_kind(shader_kind) == ShaderKind::Vertex {
         for resource in &shader_resources.stage_outputs {
             let location =
-                ast.get_decoration(resource.id, spirv_cross::spirv::Decoration::Location)?;
-            ast.rename_interface_variable(
+                compiler.decoration(resource.id, spirv_cross2::spirv::Decoration::Location)?;
+            compiler.rename_interface_variable(
                 &[resource.clone()],
                 location,
                 &format!("interface_var_{}", location),
@@ -1011,8 +1007,8 @@ fn rename_gl_in_out_attributes(
     } else if normalize_shader_kind(shader_kind) == ShaderKind::Fragment {
         for resource in &shader_resources.stage_inputs {
             let location =
-                ast.get_decoration(resource.id, spirv_cross::spirv::Decoration::Location)?;
-            ast.rename_interface_variable(
+                compiler.decoration(resource.id, spirv_cross2::spirv::Decoration::Location)?;
+            compiler.rename_interface_variable(
                 &[resource.clone()],
                 location,
                 &format!("interface_var_{}", location),

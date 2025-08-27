@@ -17,7 +17,8 @@ rafx-api = { version = "0.0.16", path = "../rafx-api", features = ["serde-suppor
 fnv = "1.0"
 structopt = "0.3"
 shaderc = "0.8"
-spirv_cross = { version = "0.0.1", features = ["glsl", "hlsl", "msl"], package = "aclysma_spirv_cross" }
+#spirv_cross = { version = "0.0.1", features = ["glsl", "hlsl", "msl"], package = "aclysma_spirv_cross" }
+spirv-cross2 = "0.4.6"
 globwalk = "0.8.1"
 
 ron = "0.6"

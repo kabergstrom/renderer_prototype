@@ -9,19 +9,15 @@ use rafx_api::{
     RafxSamplerDef, RafxShaderResource, RafxShaderStageFlags, RafxShaderStageReflection,
     MAX_DESCRIPTOR_SET_LAYOUTS,
 };
-use spirv_cross::msl::{ResourceBinding, ResourceBindingLocation, SamplerData, SamplerLocation};
-use spirv_cross::spirv::{ExecutionModel, Type};
+use spirv_cross2::handle::{Handle, TypeId};
+use spirv_cross2::reflect::DecorationValue;
+use spirv_cross2::spirv::ExecutionModel;
 use std::collections::BTreeMap;
 
-fn get_descriptor_count_from_type<TargetT>(
-    ast: &spirv_cross::spirv::Ast<TargetT>,
-    ty: u32,
-) -> RafxResult<u32>
-where
-    TargetT: spirv_cross::spirv::Target,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Parse<TargetT>,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Compile<TargetT>,
-{
+fn get_descriptor_count_from_type(
+    artifact: &spirv_cross2::compile::CompiledArtifact<spirv_cross2::targets::Glsl>,
+    ty: Handle<TypeId>,
+) -> RafxResult<u32> {
     fn count_elements(a: &[u32]) -> u32 {
         let mut count = 1;
         for x in a {
@@ -31,87 +27,87 @@ where
         count
     }
 
+    use spirv_cross2::reflect::TypeInner as Type;
     Ok(
-        match ast
-            .get_type(ty)
+        match artifact
+            .type_description(ty)
             .map_err(|_x| "could not get type from reflection data")?
+            .inner
         {
-            Type::Unknown => 0,
-            Type::Void => 0,
-            Type::Boolean { array, .. } => count_elements(&array),
-            Type::Char { array, .. } => count_elements(&array),
-            Type::Int { array, .. } => count_elements(&array),
-            Type::UInt { array, .. } => count_elements(&array),
-            Type::Int64 { array, .. } => count_elements(&array),
-            Type::UInt64 { array, .. } => count_elements(&array),
-            Type::AtomicCounter { array, .. } => count_elements(&array),
-            Type::Half { array, .. } => count_elements(&array),
-            Type::Float { array, .. } => count_elements(&array),
-            Type::Double { array, .. } => count_elements(&array),
-            Type::Struct { array, .. } => count_elements(&array),
-            Type::Image { array, .. } => count_elements(&array),
-            Type::SampledImage { array, .. } => count_elements(&array),
-            Type::Sampler { array, .. } => count_elements(&array),
-            Type::SByte { array, .. } => count_elements(&array),
-            Type::UByte { array, .. } => count_elements(&array),
-            Type::Short { array, .. } => count_elements(&array),
-            Type::UShort { array, .. } => count_elements(&array),
-            Type::ControlPointArray => 1,
-            Type::AccelerationStructure => 1,
-            Type::RayQuery => 0,
-            _ => unimplemented!(),
+            Type::Pointer {
+                base,
+                storage,
+                forward,
+            } => todo!(),
+            Type::Scalar(scalar) => todo!(),
+            Type::Vector { width, scalar } => todo!(),
+            Type::Matrix {
+                columns,
+                rows,
+                scalar,
+            } => todo!(),
+            Type::Array {
+                base,
+                storage,
+                dimensions,
+                stride,
+            } => todo!(),
+            Type::Unknown => todo!(),
+            Type::Void => todo!(),
+            Type::Struct(struct_type) => todo!(),
+            Type::Image(image_type) => todo!(),
+            Type::AccelerationStructure => todo!(),
+            Type::Sampler => todo!(),
         },
     )
 }
 
-fn get_descriptor_size_from_resource_rafx<TargetT>(
-    ast: &spirv_cross::spirv::Ast<TargetT>,
-    resource: &spirv_cross::spirv::Resource,
+fn get_descriptor_size_from_resource_rafx(
+    artifact: &spirv_cross2::compile::CompiledArtifact<spirv_cross2::targets::Glsl>,
+    resource: &spirv_cross2::reflect::Resource,
     resource_type: RafxResourceType,
-) -> RafxResult<u32>
-where
-    TargetT: spirv_cross::spirv::Target,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Parse<TargetT>,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Compile<TargetT>,
-{
+) -> RafxResult<u32> {
     Ok(
         if resource_type.intersects(
             RafxResourceType::UNIFORM_BUFFER
                 | RafxResourceType::BUFFER
                 | RafxResourceType::BUFFER_READ_WRITE,
         ) {
-            (ast.get_declared_struct_size(resource.type_id)
-                .map_err(|_x| "could not get size from reflection data")?
-                + 15)
-                / 16
-                * 16
+            todo!("not sure here yet");
+            // (artifact
+            //     .get_declared_struct_size(resource.type_id)
+            //     .map_err(|_x| "could not get size from reflection data")?
+            //     + 15,)
+            //     / 16
+            //     * 16
         } else {
             0
         },
     )
 }
 
-fn get_rafx_resource<TargetT>(
+fn get_rafx_resource(
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     user_types: &FnvHashMap<String, UserType>,
-    ast: &spirv_cross::spirv::Ast<TargetT>,
+    artifact: &spirv_cross2::compile::CompiledArtifact<spirv_cross2::targets::Glsl>,
     declarations: &super::parse_declarations::ParseDeclarationsResult,
-    resource: &spirv_cross::spirv::Resource,
+    resource: &spirv_cross2::reflect::Resource,
     resource_type: RafxResourceType,
     stage_flags: RafxShaderStageFlags,
-) -> RafxResult<RafxShaderResource>
-where
-    TargetT: spirv_cross::spirv::Target,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Parse<TargetT>,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Compile<TargetT>,
-{
-    let set = ast
-        .get_decoration(resource.id, spirv_cross::spirv::Decoration::DescriptorSet)
+) -> RafxResult<RafxShaderResource> {
+    let set = artifact
+        .decoration(resource.id, spirv_cross2::spirv::Decoration::DescriptorSet)
         .map_err(|_x| "could not get descriptor set index from reflection data")?;
-    let binding = ast
-        .get_decoration(resource.id, spirv_cross::spirv::Decoration::Binding)
+    let Some(DecorationValue::Literal(set)) = set else {
+        Err("could not get descriptor set index from reflection data")?
+    };
+    let binding = artifact
+        .decoration(resource.id, spirv_cross2::spirv::Decoration::Binding)
         .map_err(|_x| "could not get descriptor binding index from reflection data")?;
-    let element_count = get_descriptor_count_from_type(ast, resource.type_id)?;
+    let Some(DecorationValue::Literal(binding)) = binding else {
+        Err("could not get descriptor binding index from reflection data")?
+    };
+    let element_count = get_descriptor_count_from_type(artifact, resource.type_id)?;
 
     let parsed_binding = declarations.bindings.iter().find(|x| x.parsed.layout_parts.binding == Some(binding as usize) && x.parsed.layout_parts.set == Some(set as usize))
         .or_else(|| declarations.bindings.iter().find(|x| x.parsed.instance_name == *resource.name))
@@ -148,7 +144,7 @@ where
         element_count,
         size_in_bytes: 0,
         used_in_shader_stages: stage_flags,
-        name: Some(slot_name.unwrap_or_else(|| resource.name.clone())),
+        name: Some(slot_name.unwrap_or_else(|| resource.name.to_string())),
         gles_name: Some(gles_name),
         gles_sampler_name: None, // This is set later if necessary when we cross compile GLES 2.0 src by set_gl_sampler_name
         gles2_uniform_members: gl_uniform_members,
@@ -161,25 +157,20 @@ where
     Ok(resource)
 }
 
-fn get_reflected_binding<TargetT>(
+fn get_reflected_binding(
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     user_types: &FnvHashMap<String, UserType>,
-    ast: &spirv_cross::spirv::Ast<TargetT>,
+    artifact: &spirv_cross2::compile::CompiledArtifact<spirv_cross2::targets::Glsl>,
     declarations: &super::parse_declarations::ParseDeclarationsResult,
-    resource: &spirv_cross::spirv::Resource,
+    resource: &spirv_cross2::reflect::Resource,
     resource_type: RafxResourceType,
     stage_flags: RafxShaderStageFlags,
-) -> RafxResult<RafxReflectedDescriptorSetLayoutBinding>
-where
-    TargetT: spirv_cross::spirv::Target,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Parse<TargetT>,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Compile<TargetT>,
-{
+) -> RafxResult<RafxReflectedDescriptorSetLayoutBinding> {
     let name = &resource.name;
     let rafx_resource = get_rafx_resource(
         builtin_types,
         user_types,
-        ast,
+        artifact,
         declarations,
         resource,
         resource_type,
@@ -192,7 +183,7 @@ where
         .or_else(|| declarations.bindings.iter().find(|x| x.parsed.instance_name == *name))
         .ok_or_else(|| format!("A resource named {} in spirv reflection data was not matched up to a resource scanned in source code.", resource.name))?;
 
-    let size = get_descriptor_size_from_resource_rafx(ast, resource, resource_type)
+    let size = get_descriptor_size_from_resource_rafx(artifact, resource, resource_type)
         .map_err(|_x| "could not get size from reflection data")?;
 
     let internal_buffer_per_descriptor_size =
@@ -216,26 +207,21 @@ where
     })
 }
 
-fn get_reflected_bindings<TargetT>(
+fn get_reflected_bindings(
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     user_types: &FnvHashMap<String, UserType>,
     descriptors: &mut Vec<RafxReflectedDescriptorSetLayoutBinding>,
-    ast: &spirv_cross::spirv::Ast<TargetT>,
+    artifact: &spirv_cross2::compile::CompiledArtifact<spirv_cross2::targets::Glsl>,
     declarations: &super::parse_declarations::ParseDeclarationsResult,
-    resources: &[spirv_cross::spirv::Resource],
+    resources: &[spirv_cross2::reflect::Resource],
     resource_type: RafxResourceType,
     stage_flags: RafxShaderStageFlags,
-) -> RafxResult<()>
-where
-    TargetT: spirv_cross::spirv::Target,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Parse<TargetT>,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Compile<TargetT>,
-{
+) -> RafxResult<()> {
     for resource in resources {
         descriptors.push(get_reflected_binding(
             builtin_types,
             user_types,
-            ast,
+            artifact,
             declarations,
             resource,
             resource_type,
@@ -246,41 +232,54 @@ where
     Ok(())
 }
 
-fn get_all_reflected_bindings<TargetT>(
+fn get_all_reflected_bindings(
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     user_types: &FnvHashMap<String, UserType>,
-    shader_resources: &spirv_cross::spirv::ShaderResources,
-    ast: &spirv_cross::spirv::Ast<TargetT>,
+    shader_resources: &spirv_cross2::reflect::ShaderResources,
+    artifact: &spirv_cross2::compile::CompiledArtifact<spirv_cross2::targets::Glsl>,
     declarations: &super::parse_declarations::ParseDeclarationsResult,
     stage_flags: RafxShaderStageFlags,
-) -> RafxResult<Vec<RafxReflectedDescriptorSetLayoutBinding>>
-where
-    TargetT: spirv_cross::spirv::Target,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Parse<TargetT>,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Compile<TargetT>,
-{
+) -> RafxResult<Vec<RafxReflectedDescriptorSetLayoutBinding>> {
     let mut bindings = Vec::default();
+    let uniform_buffers = shader_resources
+        .resources_for_type(spirv_cross2::reflect::ResourceType::UniformBuffer)
+        .map_err(|_x| "could not uniform buffers from reflection data")?
+        .collect::<Vec<_>>();
     get_reflected_bindings(
         builtin_types,
         user_types,
         &mut bindings,
-        ast,
+        artifact,
         declarations,
-        &shader_resources.uniform_buffers,
+        &uniform_buffers,
         RafxResourceType::UNIFORM_BUFFER,
         stage_flags,
     )?;
-    //TODO: I am current forcing all storage buffers to be UAVs
-    // - This causes storage buffers to fail to bind because in code they are just a BUFFER
+
+    let all_storage_buffers = shader_resources
+        .resources_for_type(spirv_cross2::reflect::ResourceType::StorageBuffer)
+        .map_err(|_x| "could not storage buffers from reflection data")?
+        .collect::<Vec<_>>();
+    let mut ro_storage_buffers = Vec::new();
+    let mut rw_storage_buffers = Vec::new();
+    for buf in all_storage_buffers {
+        if let Some(DecorationValue::Present) = artifact
+            .decoration(buf.id, spirv_cross2::spirv::Decoration::NonWritable)
+            .map_err(|_x| "could not get decoration from reflection data")?
+        {
+            ro_storage_buffers.push(buf);
+        } else {
+            rw_storage_buffers.push(buf);
+        }
+    }
 
     get_reflected_bindings(
         builtin_types,
         user_types,
         &mut bindings,
-        ast,
+        artifact,
         declarations,
-        &shader_resources.storage_buffers,
-        //TODO: Detect read/write in shader to narrow this down? Or use readonly/writeonly/readwrite keywords in some way?
+        &rw_storage_buffers,
         RafxResourceType::BUFFER_READ_WRITE,
         stage_flags,
     )?;
@@ -288,39 +287,65 @@ where
         builtin_types,
         user_types,
         &mut bindings,
-        ast,
+        artifact,
         declarations,
-        &shader_resources.storage_images,
+        &ro_storage_buffers,
+        RafxResourceType::BUFFER,
+        stage_flags,
+    )?;
+    let storage_images = shader_resources
+        .resources_for_type(spirv_cross2::reflect::ResourceType::StorageImage)
+        .map_err(|_x| "could not storage images from reflection data")?
+        .collect::<Vec<_>>();
+    get_reflected_bindings(
+        builtin_types,
+        user_types,
+        &mut bindings,
+        artifact,
+        declarations,
+        &storage_images,
         RafxResourceType::TEXTURE_READ_WRITE,
         stage_flags,
     )?;
+    let sampled_images = shader_resources
+        .resources_for_type(spirv_cross2::reflect::ResourceType::SampledImage)
+        .map_err(|_x| "could not sampled images from reflection data")?
+        .collect::<Vec<_>>();
     get_reflected_bindings(
         builtin_types,
         user_types,
         &mut bindings,
-        ast,
+        artifact,
         declarations,
-        &shader_resources.sampled_images,
+        &sampled_images,
         RafxResourceType::COMBINED_IMAGE_SAMPLER,
         stage_flags,
     )?;
+    let separate_images = shader_resources
+        .resources_for_type(spirv_cross2::reflect::ResourceType::SeparateImage)
+        .map_err(|_x| "could not get separate images from reflection data")?
+        .collect::<Vec<_>>();
     get_reflected_bindings(
         builtin_types,
         user_types,
         &mut bindings,
-        ast,
+        artifact,
         declarations,
-        &shader_resources.separate_images,
+        &separate_images,
         RafxResourceType::TEXTURE,
         stage_flags,
     )?;
+    let separate_samplers = shader_resources
+        .resources_for_type(spirv_cross2::reflect::ResourceType::SeparateSamplers)
+        .map_err(|_x| "could not get separate samplers from reflection data")?
+        .collect::<Vec<_>>();
     get_reflected_bindings(
         builtin_types,
         user_types,
         &mut bindings,
-        ast,
+        artifact,
         declarations,
-        &shader_resources.separate_samplers,
+        &separate_samplers,
         RafxResourceType::SAMPLER,
         stage_flags,
     )?;
@@ -330,7 +355,7 @@ where
 
 fn shader_stage_to_execution_model(
     stages: RafxShaderStageFlags
-) -> Vec<spirv_cross::spirv::ExecutionModel> {
+) -> Vec<spirv_cross2::spirv::ExecutionModel> {
     let mut out = vec![];
     if stages.intersects(RafxShaderStageFlags::VERTEX) {
         out.push(ExecutionModel::Vertex)
@@ -339,7 +364,7 @@ fn shader_stage_to_execution_model(
         out.push(ExecutionModel::Fragment)
     }
     if stages.intersects(RafxShaderStageFlags::COMPUTE) {
-        out.push(ExecutionModel::GlCompute)
+        out.push(ExecutionModel::GLCompute)
     }
     if stages.intersects(RafxShaderStageFlags::TESSELLATION_CONTROL) {
         out.push(ExecutionModel::TessellationControl)
@@ -391,7 +416,13 @@ pub(crate) fn get_sorted_bindings_for_all_entry_points(
 
 pub(crate) fn get_hlsl_register_assignments(
     entry_points: &[RafxReflectedEntryPoint]
-) -> RafxResult<Vec<spirv_cross::hlsl::HlslResourceBinding>> {
+) -> RafxResult<
+    Vec<(
+        spirv_cross2::spirv::ExecutionModel,
+        spirv_cross2::compile::hlsl::ResourceBinding,
+        spirv_cross2::compile::hlsl::BindTarget,
+    )>,
+> {
     let mut bindings = vec![];
 
     let resources = get_sorted_bindings_for_all_entry_points(entry_points)?;
@@ -400,13 +431,26 @@ pub(crate) fn get_hlsl_register_assignments(
     for resource in resources {
         let execution_models = shader_stage_to_execution_model(resource.used_in_shader_stages);
         if resource.resource_type != RafxResourceType::ROOT_CONSTANT {
-            let space_register = spirv_cross::hlsl::HlslResourceBindingSpaceRegister {
-                register_space: resource.dx12_space.unwrap(),
-                register_binding: resource.dx12_reg.unwrap(),
+            let space_register = spirv_cross2::compile::hlsl::RegisterBinding {
+                space: resource.dx12_space.unwrap(),
+                register: resource.dx12_reg.unwrap(),
             };
-            max_space_index = max_space_index.max(space_register.register_space as i32);
+            max_space_index = max_space_index.max(space_register.space as i32);
             for execution_model in execution_models {
-                bindings.push(spirv_cross::hlsl::HlslResourceBinding {
+                bindings.push((
+                    execution_model,
+                    spirv_cross2::compile::hlsl::ResourceBinding::Qualified {
+                        set: resource.set_index,
+                        binding: resource.binding,
+                    },
+                    spirv_cross2::compile::hlsl::BindTarget {
+                        cbv: Some(space_register),
+                        uav: Some(space_register),
+                        srv: Some(space_register),
+                        sampler: Some(space_register),
+                    },
+                ));
+                /*spirv_cross2::hlsl::HlslResourceBinding {
                     desc_set: resource.set_index,
                     binding: resource.binding,
                     stage: execution_model,
@@ -414,7 +458,7 @@ pub(crate) fn get_hlsl_register_assignments(
                     uav: space_register,
                     srv: space_register,
                     sampler: space_register,
-                })
+                })*/
             }
         }
     }
@@ -435,20 +479,31 @@ pub(crate) fn get_hlsl_register_assignments(
 
     if !push_constant_stages.is_empty() {
         let push_constant_execution_models = shader_stage_to_execution_model(push_constant_stages);
-        let space_register = spirv_cross::hlsl::HlslResourceBindingSpaceRegister {
-            register_space: push_constant_space_index,
-            register_binding: 0,
+        let space_register = spirv_cross2::compile::hlsl::RegisterBinding {
+            space: push_constant_space_index,
+            register: 0,
         };
         for execution_model in push_constant_execution_models {
-            bindings.push(spirv_cross::hlsl::HlslResourceBinding {
-                desc_set: !0,
-                binding: 0,
-                stage: execution_model,
-                cbv: space_register,
-                uav: space_register,
-                srv: space_register,
-                sampler: space_register,
-            })
+            // bindings.push(spirv_cross2::hlsl::HlslResourceBinding {
+            //     desc_set: !0,
+            //     binding: 0,
+            //     stage: execution_model,
+            //     cbv: space_register,
+            //     uav: space_register,
+            //     srv: space_register,
+            //     sampler: space_register,
+            // })
+            todo!("this is sus, the space_register doesn't vary?");
+            bindings.push((
+                execution_model,
+                spirv_cross2::compile::hlsl::ResourceBinding::PushConstantBuffer,
+                spirv_cross2::compile::hlsl::BindTarget {
+                    cbv: Some(space_register),
+                    uav: Some(space_register),
+                    srv: Some(space_register),
+                    sampler: Some(space_register),
+                },
+            ));
         }
     }
 
@@ -464,11 +519,15 @@ pub(crate) fn get_hlsl_register_assignments(
 //TODO: Exclude MSL constexpr samplers?
 pub(crate) fn msl_assign_argument_buffer_ids(
     entry_points: &[RafxReflectedEntryPoint]
-) -> RafxResult<BTreeMap<ResourceBindingLocation, ResourceBinding>> {
+) -> RafxResult<
+    FnvHashMap<spirv_cross2::compile::msl::ResourceBinding, spirv_cross2::compile::msl::BindTarget>,
+> {
     let resources = get_sorted_bindings_for_all_entry_points(entry_points)?;
 
-    let mut argument_buffer_assignments =
-        BTreeMap::<ResourceBindingLocation, ResourceBinding>::default();
+    let mut argument_buffer_assignments = FnvHashMap::<
+        spirv_cross2::compile::msl::ResourceBinding,
+        spirv_cross2::compile::msl::BindTarget,
+    >::default();
 
     // If we update this constant, update the arrays in this function
     assert_eq!(MAX_DESCRIPTOR_SET_LAYOUTS, 4);
@@ -497,16 +556,16 @@ pub(crate) fn msl_assign_argument_buffer_ids(
         let execution_models = shader_stage_to_execution_model(resource.used_in_shader_stages);
         for execution_model in execution_models {
             argument_buffer_assignments.insert(
-                ResourceBindingLocation {
-                    stage: execution_model,
-                    desc_set: resource.set_index,
+                spirv_cross2::compile::msl::ResourceBinding::Qualified {
+                    // stage: execution_model,
+                    set: resource.set_index,
                     binding: resource.binding,
                 },
-                ResourceBinding {
-                    buffer_id: msl_argument_buffer_id,
-                    texture_id: msl_argument_buffer_id,
-                    sampler_id: msl_argument_buffer_id,
-                    count: resource.element_count_normalized(),
+                spirv_cross2::compile::msl::BindTarget {
+                    buffer: msl_argument_buffer_id,
+                    texture: msl_argument_buffer_id,
+                    sampler: msl_argument_buffer_id,
+                    count: std::num::NonZero::new(resource.element_count_normalized()),
                 },
             );
         }
@@ -530,16 +589,12 @@ pub(crate) fn msl_assign_argument_buffer_ids(
         let push_constant_execution_models = shader_stage_to_execution_model(push_constant_stages);
         for execution_model in push_constant_execution_models {
             argument_buffer_assignments.insert(
-                ResourceBindingLocation {
-                    desc_set: !0,
-                    binding: 0,
-                    stage: execution_model,
-                },
-                ResourceBinding {
-                    count: 1,
-                    buffer_id: push_constant_set_index,
-                    sampler_id: push_constant_set_index,
-                    texture_id: push_constant_set_index,
+                spirv_cross2::compile::msl::ResourceBinding::PushConstantBuffer,
+                spirv_cross2::compile::msl::BindTarget {
+                    count: std::num::NonZero::new(1),
+                    buffer: push_constant_set_index,
+                    sampler: push_constant_set_index,
+                    texture: push_constant_set_index,
                 },
             );
         }
@@ -548,14 +603,12 @@ pub(crate) fn msl_assign_argument_buffer_ids(
     Ok(argument_buffer_assignments)
 }
 
-fn msl_create_sampler_data(
-    sampler_def: &RafxSamplerDef
-) -> RafxResult<spirv_cross::msl::SamplerData> {
-    let lod_clamp_min = LodBase16::from(sampler_def.mip_lod_bias);
+fn msl_create_sampler_data(sampler_def: &RafxSamplerDef) -> RafxResult<MslConstSampler> {
+    let lod_clamp_min = sampler_def.mip_lod_bias;
     let lod_clamp_max = if sampler_def.mip_map_mode == RafxMipMapMode::Linear {
-        LodBase16::MAX
+        sampler_def.mip_lod_bias
     } else {
-        LodBase16::ZERO
+        0.0
     };
 
     fn convert_filter(filter: RafxFilterType) -> SamplerFilter {
@@ -600,54 +653,64 @@ fn msl_create_sampler_data(
         sampler_def.max_anisotropy as i32
     };
 
-    use spirv_cross::msl::*;
-    let sampler_data = SamplerData {
-        coord: SamplerCoord::Normalized,
-        min_filter: convert_filter(sampler_def.min_filter),
-        mag_filter: convert_filter(sampler_def.mag_filter),
-        mip_filter: convert_mip_map_mode(sampler_def.mip_map_mode),
-        s_address: convert_address_mode(sampler_def.address_mode_u),
-        t_address: convert_address_mode(sampler_def.address_mode_v),
-        r_address: convert_address_mode(sampler_def.address_mode_w),
-        compare_func: convert_compare_op(sampler_def.compare_op),
-        border_color: SamplerBorderColor::TransparentBlack,
-        lod_clamp_min,
-        lod_clamp_max,
-        max_anisotropy,
-
+    use spirv_cross2::compile::msl::*;
+    let _conversion = SamplerYcbcrConversion {
         // Sampler YCbCr conversion parameters
         planes: 0,
-        resolution: FormatResolution::_444,
+        resolution: YcbcrFormatResolution::FormatResolution444,
         chroma_filter: SamplerFilter::Nearest,
-        x_chroma_offset: ChromaLocation::CositedEven,
-        y_chroma_offset: ChromaLocation::CositedEven,
+        x_chroma_offset: YcbcrChromaLocation::CositedEven,
+        y_chroma_offset: YcbcrChromaLocation::CositedEven,
         swizzle: [
-            ComponentSwizzle::Identity,
-            ComponentSwizzle::Identity,
-            ComponentSwizzle::Identity,
-            ComponentSwizzle::Identity,
+            YcbcrComponentSwizzle::Identity,
+            YcbcrComponentSwizzle::Identity,
+            YcbcrComponentSwizzle::Identity,
+            YcbcrComponentSwizzle::Identity,
         ],
-        ycbcr_conversion_enable: false,
-        ycbcr_model: SamplerYCbCrModelConversion::RgbIdentity,
-        ycbcr_range: SamplerYCbCrRange::ItuFull,
+        ycbcr_model: YcbcrTargetFormat::RgbIdentity,
+        ycbcr_range: YcbcrConversionRange::ItuFull,
         bpc: 8,
     };
+    Ok(MslConstSampler {
+        sampler: ConstexprSampler {
+            coord: SamplerCoord::Normalized,
+            min_filter: convert_filter(sampler_def.min_filter),
+            mag_filter: convert_filter(sampler_def.mag_filter),
+            mip_filter: convert_mip_map_mode(sampler_def.mip_map_mode),
+            s_address: convert_address_mode(sampler_def.address_mode_u),
+            t_address: convert_address_mode(sampler_def.address_mode_v),
+            r_address: convert_address_mode(sampler_def.address_mode_w),
+            compare_func: convert_compare_op(sampler_def.compare_op),
+            border_color: SamplerBorderColor::TransparentBlack,
+            lod_clamp_min,
+            lod_clamp_max,
+            max_anisotropy,
+            compare_enable: sampler_def.compare_op != RafxCompareOp::Never,
+            lod_clamp_enable: sampler_def.mip_lod_bias != 0.0,
+            anisotropy_enable: sampler_def.max_anisotropy > 0.0,
+        },
+        conversion: None,
+    })
+}
 
-    Ok(sampler_data)
+struct MslConstSampler {
+    sampler: spirv_cross2::compile::msl::ConstexprSampler,
+    conversion: Option<spirv_cross2::compile::msl::SamplerYcbcrConversion>,
 }
 
 pub(crate) fn msl_const_samplers(
     entry_points: &[RafxReflectedEntryPoint]
-) -> RafxResult<BTreeMap<SamplerLocation, SamplerData>> {
-    let mut immutable_samplers = BTreeMap::<SamplerLocation, SamplerData>::default();
+) -> RafxResult<FnvHashMap<spirv_cross2::compile::msl::ResourceBinding, MslConstSampler>> {
+    let mut immutable_samplers =
+        FnvHashMap::<spirv_cross2::compile::msl::ResourceBinding, MslConstSampler>::default();
 
     for entry_point in entry_points {
         for layout in &entry_point.descriptor_set_layouts {
             if let Some(layout) = layout {
                 for binding in &layout.bindings {
                     if let Some(immutable_sampler) = &binding.immutable_samplers {
-                        let location = SamplerLocation {
-                            desc_set: binding.resource.set_index,
+                        let location = spirv_cross2::compile::msl::ResourceBinding::Qualified {
+                            set: binding.resource.set_index,
                             binding: binding.resource.binding,
                         };
 
@@ -659,9 +722,9 @@ pub(crate) fn msl_const_samplers(
                         let sampler_data = msl_create_sampler_data(&immutable_sampler)?;
 
                         if let Some(old) = immutable_samplers.get(&location) {
-                            if *old != sampler_data {
-                                Err(format!("Samplers in different entry points but same location ({:?}) do not match: \n{:#?}\n{:#?}", location, old, sampler_data))?;
-                            }
+                            // if *old != sampler_data {
+                            //     Err(format!("Samplers in different entry points but same location ({:?}) do not match: \n{:#?}\n{:#?}", location, old, sampler_data))?;
+                            // }
                         } else {
                             immutable_samplers.insert(location, sampler_data);
                         }
@@ -683,7 +746,7 @@ fn generate_gl_uniform_members(
     gl_uniform_members: &mut Vec<RafxGlUniformMember>,
 ) -> RafxResult<()> {
     if builtin_types.contains_key(type_name) {
-        //println!("{} at {}: {}", prefix, offset, type_name);
+        //println!("{} at {}: {}", prefix, offset, tye_name);
         gl_uniform_members.push(RafxGlUniformMember {
             name: prefix,
             offset: offset as u32,
@@ -755,10 +818,18 @@ fn generate_gl_uniform_members(
 
 pub struct ShaderProcessorRefectionData {
     pub reflection: Vec<RafxReflectedEntryPoint>,
-    pub hlsl_register_assignments: Vec<spirv_cross::hlsl::HlslResourceBinding>,
-    pub hlsl_vertex_attribute_remaps: Vec<spirv_cross::hlsl::HlslVertexAttributeRemap>,
-    pub msl_argument_buffer_assignments: BTreeMap<ResourceBindingLocation, ResourceBinding>,
-    pub msl_const_samplers: BTreeMap<SamplerLocation, SamplerData>,
+    pub hlsl_register_assignments: Vec<(
+        spirv_cross2::spirv::ExecutionModel,
+        spirv_cross2::compile::hlsl::ResourceBinding,
+        spirv_cross2::compile::hlsl::BindTarget,
+    )>,
+    pub hlsl_vertex_attribute_remaps: Vec<RafxReflectedVertexInput>,
+    pub msl_argument_buffer_assignments: FnvHashMap<
+        spirv_cross2::compile::msl::ResourceBinding,
+        spirv_cross2::compile::msl::BindTarget,
+    >,
+    pub msl_const_samplers:
+        FnvHashMap<spirv_cross2::compile::msl::ResourceBinding, MslConstSampler>,
 }
 
 impl ShaderProcessorRefectionData {
@@ -797,35 +868,30 @@ impl ShaderProcessorRefectionData {
     }
 }
 
-pub(crate) fn reflect_data<TargetT>(
+pub(crate) fn reflect_data(
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     user_types: &FnvHashMap<String, UserType>,
-    ast: &spirv_cross::spirv::Ast<TargetT>,
+    artifact: &spirv_cross2::compile::CompiledArtifact<spirv_cross2::targets::Glsl>,
     declarations: &super::parse_declarations::ParseDeclarationsResult,
     require_semantics: bool,
-) -> RafxResult<ShaderProcessorRefectionData>
-where
-    TargetT: spirv_cross::spirv::Target,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Parse<TargetT>,
-    spirv_cross::spirv::Ast<TargetT>: spirv_cross::spirv::Compile<TargetT>,
-{
+) -> RafxResult<ShaderProcessorRefectionData> {
     let mut reflected_entry_points = Vec::default();
-    for entry_point in ast
-        .get_entry_points()
+    for entry_point in artifact
+        .entry_points()
         .map_err(|_x| "could not get entry point from reflection data")?
     {
         let entry_point_name = entry_point.name;
         let stage_flags = map_shader_stage_flags(entry_point.execution_model)?;
 
-        let shader_resources = ast
-            .get_shader_resources()
+        let shader_resources = artifact
+            .shader_resources()
             .map_err(|_x| "could not get resources from reflection data")?;
 
         let mut dsc_bindings = get_all_reflected_bindings(
             builtin_types,
             user_types,
             &shader_resources,
-            ast,
+            artifact,
             declarations,
             stage_flags,
         )?;
@@ -893,17 +959,30 @@ where
                 }
             }
         }
-
+        let all_resources = &shader_resources
+            .all_resources()
+            .map_err(|_e| "failed getting all resources from reflection data")?;
         //TODO: This is using a list of push constants but GLSL disallows multiple within
         // the same file
-        for push_constant in &shader_resources.push_constant_buffers {
-            let declared_size = ast.get_declared_struct_size(push_constant.type_id).unwrap();
+        for push_constant in &all_resources.push_constant_buffers {
+            // let declared_size = artifact
+            //     .get_declared_struct_size(push_constant.type_id)
+            //     .unwrap();
+            let push_constant_type = artifact.type_description(push_constant.type_id).unwrap();
+            let spirv_cross2::reflect::TypeSizeHint::Static(declared_size) =
+                push_constant_type.size_hint
+            else {
+                Err(format!(
+                    "push constant {:?} has size_hint {:?}, expected static",
+                    push_constant.name, push_constant_type.size_hint
+                ))?
+            };
 
             let resource = RafxShaderResource {
                 resource_type: RafxResourceType::ROOT_CONSTANT,
                 size_in_bytes: declared_size as u32,
                 used_in_shader_stages: stage_flags,
-                name: Some(push_constant.name.clone()),
+                name: Some(push_constant.name.to_string()),
                 set_index: u32::MAX,
                 binding: u32::MAX,
                 dx12_space: Some(push_constant_dx12_space as u32),
@@ -918,12 +997,15 @@ where
         //TODO: Store the type and verify that the format associated in the game i.e. R32G32B32 is
         // something reasonable (like vec3).
         let mut dsc_vertex_inputs = Vec::default();
-        if entry_point.execution_model == spirv_cross::spirv::ExecutionModel::Vertex {
-            for resource in shader_resources.stage_inputs {
+        if entry_point.execution_model == spirv_cross2::spirv::ExecutionModel::Vertex {
+            for resource in &all_resources.stage_inputs {
                 let name = &resource.name;
-                let location = ast
-                    .get_decoration(resource.id, spirv_cross::spirv::Decoration::Location)
+                let location = artifact
+                    .decoration(resource.id, spirv_cross2::spirv::Decoration::Location)
                     .map_err(|_x| "could not get descriptor binding index from reflection data")?;
+                let Some(DecorationValue::Literal(location)) = location else {
+                    Err("could not get descriptor binding index from reflection data")?
+                };
 
                 let parsed_binding = declarations.bindings.iter().find(|x| x.parsed.layout_parts.location == Some(location as usize))
                     .or_else(|| declarations.bindings.iter().find(|x| x.parsed.instance_name == *name))
@@ -945,14 +1027,14 @@ where
                 if parsed_binding.parsed.type_name == "mat4" {
                     for index in 0..4 {
                         dsc_vertex_inputs.push(RafxReflectedVertexInput {
-                            name: name.clone(),
+                            name: name.to_string(),
                             semantic: format!("{}{}", semantic, index),
                             location: location + index,
                         });
                     }
                 } else {
                     dsc_vertex_inputs.push(RafxReflectedVertexInput {
-                        name: name.clone(),
+                        name: name.to_string(),
                         semantic,
                         location,
                     });
@@ -960,21 +1042,20 @@ where
             }
         }
 
-        if let Some(group_size) = &declarations.group_size {
-            assert_eq!(entry_point.work_group_size.x, group_size.x);
-            assert_eq!(entry_point.work_group_size.y, group_size.y);
-            assert_eq!(entry_point.work_group_size.z, group_size.z);
-        }
+        // if let Some(group_size) = &declarations.group_size {
+        //     assert_eq!(entry_point.work_group_size.x, group_size.x);
+        //     assert_eq!(entry_point.work_group_size.y, group_size.y);
+        //     assert_eq!(entry_point.work_group_size.z, group_size.z);
+        // }
 
         let rafx_reflection = RafxShaderStageReflection {
             shader_stage: stage_flags,
             resources: rafx_bindings,
-            entry_point_name: entry_point_name.clone(),
-            compute_threads_per_group: Some([
-                entry_point.work_group_size.x,
-                entry_point.work_group_size.y,
-                entry_point.work_group_size.z,
-            ]),
+            entry_point_name: entry_point_name.to_string(),
+            compute_threads_per_group: declarations
+                .group_size
+                .as_ref()
+                .map(|group_size| [group_size.x, group_size.y, group_size.z]),
         };
 
         reflected_entry_points.push(RafxReflectedEntryPoint {
@@ -993,10 +1074,7 @@ where
     let mut hlsl_vertex_attribute_remaps = Vec::default();
     for entry_point in &reflected_entry_points {
         for vi in &entry_point.vertex_inputs {
-            hlsl_vertex_attribute_remaps.push(spirv_cross::hlsl::HlslVertexAttributeRemap {
-                location: vi.location,
-                semantic: vi.semantic.clone(),
-            });
+            hlsl_vertex_attribute_remaps.push(vi.clone());
         }
     }
 
@@ -1010,7 +1088,7 @@ where
 }
 
 fn map_shader_stage_flags(
-    shader_stage: spirv_cross::spirv::ExecutionModel
+    shader_stage: spirv_cross2::spirv::ExecutionModel
 ) -> RafxResult<RafxShaderStageFlags> {
     Ok(match shader_stage {
         ExecutionModel::Vertex => RafxShaderStageFlags::VERTEX,
@@ -1018,7 +1096,15 @@ fn map_shader_stage_flags(
         ExecutionModel::TessellationEvaluation => RafxShaderStageFlags::TESSELLATION_EVALUATION,
         ExecutionModel::Geometry => RafxShaderStageFlags::GEOMETRY,
         ExecutionModel::Fragment => RafxShaderStageFlags::FRAGMENT,
-        ExecutionModel::GlCompute => RafxShaderStageFlags::COMPUTE,
+        ExecutionModel::GLCompute => RafxShaderStageFlags::COMPUTE,
         ExecutionModel::Kernel => RafxShaderStageFlags::COMPUTE,
+        ExecutionModel::TaskNV | ExecutionModel::TaskEXT => RafxShaderStageFlags::AMPLIFICATION,
+        ExecutionModel::MeshEXT | ExecutionModel::MeshNV => RafxShaderStageFlags::MESH,
+        ExecutionModel::RayGenerationNV => todo!(),
+        ExecutionModel::IntersectionNV => todo!(),
+        ExecutionModel::AnyHitNV => todo!(),
+        ExecutionModel::ClosestHitNV => todo!(),
+        ExecutionModel::MissNV => todo!(),
+        ExecutionModel::CallableNV => todo!(),
     })
 }
