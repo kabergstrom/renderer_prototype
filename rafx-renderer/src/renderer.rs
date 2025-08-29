@@ -386,7 +386,7 @@ impl Renderer {
             }
             Err(e) => {
                 let graphics_queue = renderer.graphics_queue();
-                presentable_frame.present_with_error(graphics_queue, e)
+                presentable_frame.present_with_error(graphics_queue, e, &[])
             }
         };
     }

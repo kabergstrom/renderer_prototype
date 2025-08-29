@@ -509,7 +509,7 @@ pub fn update_loop(
                     // Present the image
                     //
                     presentable_frame
-                        .present(&graphics_queue, &[&cmd_buffer])
+                        .present(&graphics_queue, &[&cmd_buffer], &[])
                         .unwrap();
                 }
                 _ => (),

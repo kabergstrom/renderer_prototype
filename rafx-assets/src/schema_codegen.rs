@@ -26,7 +26,10 @@ impl ComputePipelineAssetAccessor {
 pub struct ComputePipelineAssetRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for ComputePipelineAssetRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         ComputePipelineAssetRef(property_path, data_container)
     }
 }
@@ -49,7 +52,10 @@ impl<'a> ComputePipelineAssetRef<'a> {
 pub struct ComputePipelineAssetRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for ComputePipelineAssetRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         ComputePipelineAssetRefMut(property_path, data_container.clone())
     }
 }
@@ -61,18 +67,21 @@ impl<'a> RecordRefMut for ComputePipelineAssetRefMut<'a> {
 }
 
 impl<'a> ComputePipelineAssetRefMut<'a> {
-    pub fn entry_name(self: &'a Self) -> StringFieldRefMut {
+    pub fn entry_name(self: &'a Self) -> StringFieldRefMut<'a> {
         StringFieldRefMut::new(self.0.push("entry_name"), &self.1)
     }
 
-    pub fn shader_module(self: &'a Self) -> AssetRefFieldRefMut {
+    pub fn shader_module(self: &'a Self) -> AssetRefFieldRefMut<'a> {
         AssetRefFieldRefMut::new(self.0.push("shader_module"), &self.1)
     }
 }
 pub struct ComputePipelineAssetRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for ComputePipelineAssetRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         ComputePipelineAssetRecord(property_path, data_container.clone())
     }
 }
@@ -111,12 +120,14 @@ impl RecordAccessor for GpuCompressedImageAssetAccessor {
     }
 }
 
-impl GpuCompressedImageAssetAccessor {
-}
+impl GpuCompressedImageAssetAccessor {}
 pub struct GpuCompressedImageAssetRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for GpuCompressedImageAssetRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         GpuCompressedImageAssetRef(property_path, data_container)
     }
 }
@@ -127,12 +138,14 @@ impl<'a> RecordRef for GpuCompressedImageAssetRef<'a> {
     }
 }
 
-impl<'a> GpuCompressedImageAssetRef<'a> {
-}
+impl<'a> GpuCompressedImageAssetRef<'a> {}
 pub struct GpuCompressedImageAssetRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for GpuCompressedImageAssetRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         GpuCompressedImageAssetRefMut(property_path, data_container.clone())
     }
 }
@@ -143,12 +156,14 @@ impl<'a> RecordRefMut for GpuCompressedImageAssetRefMut<'a> {
     }
 }
 
-impl<'a> GpuCompressedImageAssetRefMut<'a> {
-}
+impl<'a> GpuCompressedImageAssetRefMut<'a> {}
 pub struct GpuCompressedImageAssetRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for GpuCompressedImageAssetRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         GpuCompressedImageAssetRecord(property_path, data_container.clone())
     }
 }
@@ -163,8 +178,7 @@ impl Record for GpuCompressedImageAssetRecord {
     }
 }
 
-impl GpuCompressedImageAssetRecord {
-}
+impl GpuCompressedImageAssetRecord {}
 #[derive(Default)]
 pub struct GpuCompressedImageImportedDataAccessor(PropertyPath);
 
@@ -181,15 +195,17 @@ impl RecordAccessor for GpuCompressedImageImportedDataAccessor {
 }
 
 impl GpuCompressedImageImportedDataAccessor {
-    pub fn data_layers(&self) -> DynamicArrayFieldAccessor::<GpuImageSubresourceLayerAccessor> {
-        DynamicArrayFieldAccessor::<GpuImageSubresourceLayerAccessor>::new(self.0.push("data_layers"))
+    pub fn data_layers(&self) -> DynamicArrayFieldAccessor<GpuImageSubresourceLayerAccessor> {
+        DynamicArrayFieldAccessor::<GpuImageSubresourceLayerAccessor>::new(
+            self.0.push("data_layers"),
+        )
     }
 
     pub fn data_single_buffer(&self) -> BytesFieldAccessor {
         BytesFieldAccessor::new(self.0.push("data_single_buffer"))
     }
 
-    pub fn format(&self) -> EnumFieldAccessor::<GpuImageAssetDataFormatEnum> {
+    pub fn format(&self) -> EnumFieldAccessor<GpuImageAssetDataFormatEnum> {
         EnumFieldAccessor::<GpuImageAssetDataFormatEnum>::new(self.0.push("format"))
     }
 
@@ -208,7 +224,10 @@ impl GpuCompressedImageImportedDataAccessor {
 pub struct GpuCompressedImageImportedDataRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for GpuCompressedImageImportedDataRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         GpuCompressedImageImportedDataRef(property_path, data_container)
     }
 }
@@ -220,15 +239,18 @@ impl<'a> RecordRef for GpuCompressedImageImportedDataRef<'a> {
 }
 
 impl<'a> GpuCompressedImageImportedDataRef<'a> {
-    pub fn data_layers(&self) -> DynamicArrayFieldRef::<GpuImageSubresourceLayerRef> {
-        DynamicArrayFieldRef::<GpuImageSubresourceLayerRef>::new(self.0.push("data_layers"), self.1.clone())
+    pub fn data_layers(&self) -> DynamicArrayFieldRef<GpuImageSubresourceLayerRef> {
+        DynamicArrayFieldRef::<GpuImageSubresourceLayerRef>::new(
+            self.0.push("data_layers"),
+            self.1.clone(),
+        )
     }
 
     pub fn data_single_buffer(&self) -> BytesFieldRef {
         BytesFieldRef::new(self.0.push("data_single_buffer"), self.1.clone())
     }
 
-    pub fn format(&self) -> EnumFieldRef::<GpuImageAssetDataFormatEnum> {
+    pub fn format(&self) -> EnumFieldRef<GpuImageAssetDataFormatEnum> {
         EnumFieldRef::<GpuImageAssetDataFormatEnum>::new(self.0.push("format"), self.1.clone())
     }
 
@@ -244,10 +266,16 @@ impl<'a> GpuCompressedImageImportedDataRef<'a> {
         U32FieldRef::new(self.0.push("width"), self.1.clone())
     }
 }
-pub struct GpuCompressedImageImportedDataRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
+pub struct GpuCompressedImageImportedDataRefMut<'a>(
+    PropertyPath,
+    Rc<RefCell<DataContainerRefMut<'a>>>,
+);
 
 impl<'a> FieldRefMut<'a> for GpuCompressedImageImportedDataRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         GpuCompressedImageImportedDataRefMut(property_path, data_container.clone())
     }
 }
@@ -259,34 +287,42 @@ impl<'a> RecordRefMut for GpuCompressedImageImportedDataRefMut<'a> {
 }
 
 impl<'a> GpuCompressedImageImportedDataRefMut<'a> {
-    pub fn data_layers(self: &'a Self) -> DynamicArrayFieldRefMut::<GpuImageSubresourceLayerRefMut> {
-        DynamicArrayFieldRefMut::<GpuImageSubresourceLayerRefMut>::new(self.0.push("data_layers"), &self.1)
+    pub fn data_layers(
+        self: &'a Self
+    ) -> DynamicArrayFieldRefMut<'a, GpuImageSubresourceLayerRefMut<'a>> {
+        DynamicArrayFieldRefMut::<GpuImageSubresourceLayerRefMut>::new(
+            self.0.push("data_layers"),
+            &self.1,
+        )
     }
 
-    pub fn data_single_buffer(self: &'a Self) -> BytesFieldRefMut {
+    pub fn data_single_buffer(self: &'a Self) -> BytesFieldRefMut<'a> {
         BytesFieldRefMut::new(self.0.push("data_single_buffer"), &self.1)
     }
 
-    pub fn format(self: &'a Self) -> EnumFieldRefMut::<GpuImageAssetDataFormatEnum> {
+    pub fn format(self: &'a Self) -> EnumFieldRefMut<'a, GpuImageAssetDataFormatEnum> {
         EnumFieldRefMut::<GpuImageAssetDataFormatEnum>::new(self.0.push("format"), &self.1)
     }
 
-    pub fn height(self: &'a Self) -> U32FieldRefMut {
+    pub fn height(self: &'a Self) -> U32FieldRefMut<'a> {
         U32FieldRefMut::new(self.0.push("height"), &self.1)
     }
 
-    pub fn is_cube_texture(self: &'a Self) -> BooleanFieldRefMut {
+    pub fn is_cube_texture(self: &'a Self) -> BooleanFieldRefMut<'a> {
         BooleanFieldRefMut::new(self.0.push("is_cube_texture"), &self.1)
     }
 
-    pub fn width(self: &'a Self) -> U32FieldRefMut {
+    pub fn width(self: &'a Self) -> U32FieldRefMut<'a> {
         U32FieldRefMut::new(self.0.push("width"), &self.1)
     }
 }
 pub struct GpuCompressedImageImportedDataRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for GpuCompressedImageImportedDataRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         GpuCompressedImageImportedDataRecord(property_path, data_container.clone())
     }
 }
@@ -302,15 +338,18 @@ impl Record for GpuCompressedImageImportedDataRecord {
 }
 
 impl GpuCompressedImageImportedDataRecord {
-    pub fn data_layers(self: &Self) -> DynamicArrayField::<GpuImageSubresourceLayerRecord> {
-        DynamicArrayField::<GpuImageSubresourceLayerRecord>::new(self.0.push("data_layers"), &self.1)
+    pub fn data_layers(self: &Self) -> DynamicArrayField<GpuImageSubresourceLayerRecord> {
+        DynamicArrayField::<GpuImageSubresourceLayerRecord>::new(
+            self.0.push("data_layers"),
+            &self.1,
+        )
     }
 
     pub fn data_single_buffer(self: &Self) -> BytesField {
         BytesField::new(self.0.push("data_single_buffer"), &self.1)
     }
 
-    pub fn format(self: &Self) -> EnumField::<GpuImageAssetDataFormatEnum> {
+    pub fn format(self: &Self) -> EnumField<GpuImageAssetDataFormatEnum> {
         EnumField::<GpuImageAssetDataFormatEnum>::new(self.0.push("format"), &self.1)
     }
 
@@ -350,18 +389,21 @@ impl GpuImageAssetAccessor {
         GpuImageBasisCompressionSettingsAccessor::new(self.0.push("basis_compression_settings"))
     }
 
-    pub fn color_space(&self) -> EnumFieldAccessor::<GpuImageColorSpaceEnum> {
+    pub fn color_space(&self) -> EnumFieldAccessor<GpuImageColorSpaceEnum> {
         EnumFieldAccessor::<GpuImageColorSpaceEnum>::new(self.0.push("color_space"))
     }
 
-    pub fn mip_generation(&self) -> EnumFieldAccessor::<GpuImageMipGenerationEnum> {
+    pub fn mip_generation(&self) -> EnumFieldAccessor<GpuImageMipGenerationEnum> {
         EnumFieldAccessor::<GpuImageMipGenerationEnum>::new(self.0.push("mip_generation"))
     }
 }
 pub struct GpuImageAssetRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for GpuImageAssetRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         GpuImageAssetRef(property_path, data_container)
     }
 }
@@ -378,21 +420,30 @@ impl<'a> GpuImageAssetRef<'a> {
     }
 
     pub fn basis_compression_settings(&self) -> GpuImageBasisCompressionSettingsRef {
-        GpuImageBasisCompressionSettingsRef::new(self.0.push("basis_compression_settings"), self.1.clone())
+        GpuImageBasisCompressionSettingsRef::new(
+            self.0.push("basis_compression_settings"),
+            self.1.clone(),
+        )
     }
 
-    pub fn color_space(&self) -> EnumFieldRef::<GpuImageColorSpaceEnum> {
+    pub fn color_space(&self) -> EnumFieldRef<GpuImageColorSpaceEnum> {
         EnumFieldRef::<GpuImageColorSpaceEnum>::new(self.0.push("color_space"), self.1.clone())
     }
 
-    pub fn mip_generation(&self) -> EnumFieldRef::<GpuImageMipGenerationEnum> {
-        EnumFieldRef::<GpuImageMipGenerationEnum>::new(self.0.push("mip_generation"), self.1.clone())
+    pub fn mip_generation(&self) -> EnumFieldRef<GpuImageMipGenerationEnum> {
+        EnumFieldRef::<GpuImageMipGenerationEnum>::new(
+            self.0.push("mip_generation"),
+            self.1.clone(),
+        )
     }
 }
 pub struct GpuImageAssetRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for GpuImageAssetRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         GpuImageAssetRefMut(property_path, data_container.clone())
     }
 }
@@ -404,26 +455,34 @@ impl<'a> RecordRefMut for GpuImageAssetRefMut<'a> {
 }
 
 impl<'a> GpuImageAssetRefMut<'a> {
-    pub fn basis_compression(self: &'a Self) -> BooleanFieldRefMut {
+    pub fn basis_compression(self: &'a Self) -> BooleanFieldRefMut<'a> {
         BooleanFieldRefMut::new(self.0.push("basis_compression"), &self.1)
     }
 
-    pub fn basis_compression_settings(self: &'a Self) -> GpuImageBasisCompressionSettingsRefMut {
-        GpuImageBasisCompressionSettingsRefMut::new(self.0.push("basis_compression_settings"), &self.1)
+    pub fn basis_compression_settings(
+        self: &'a Self
+    ) -> GpuImageBasisCompressionSettingsRefMut<'a> {
+        GpuImageBasisCompressionSettingsRefMut::new(
+            self.0.push("basis_compression_settings"),
+            &self.1,
+        )
     }
 
-    pub fn color_space(self: &'a Self) -> EnumFieldRefMut::<GpuImageColorSpaceEnum> {
+    pub fn color_space(self: &'a Self) -> EnumFieldRefMut<'a, GpuImageColorSpaceEnum> {
         EnumFieldRefMut::<GpuImageColorSpaceEnum>::new(self.0.push("color_space"), &self.1)
     }
 
-    pub fn mip_generation(self: &'a Self) -> EnumFieldRefMut::<GpuImageMipGenerationEnum> {
+    pub fn mip_generation(self: &'a Self) -> EnumFieldRefMut<'a, GpuImageMipGenerationEnum> {
         EnumFieldRefMut::<GpuImageMipGenerationEnum>::new(self.0.push("mip_generation"), &self.1)
     }
 }
 pub struct GpuImageAssetRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for GpuImageAssetRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         GpuImageAssetRecord(property_path, data_container.clone())
     }
 }
@@ -444,14 +503,17 @@ impl GpuImageAssetRecord {
     }
 
     pub fn basis_compression_settings(self: &Self) -> GpuImageBasisCompressionSettingsRecord {
-        GpuImageBasisCompressionSettingsRecord::new(self.0.push("basis_compression_settings"), &self.1)
+        GpuImageBasisCompressionSettingsRecord::new(
+            self.0.push("basis_compression_settings"),
+            &self.1,
+        )
     }
 
-    pub fn color_space(self: &Self) -> EnumField::<GpuImageColorSpaceEnum> {
+    pub fn color_space(self: &Self) -> EnumField<GpuImageColorSpaceEnum> {
         EnumField::<GpuImageColorSpaceEnum>::new(self.0.push("color_space"), &self.1)
     }
 
-    pub fn mip_generation(self: &Self) -> EnumField::<GpuImageMipGenerationEnum> {
+    pub fn mip_generation(self: &Self) -> EnumField<GpuImageMipGenerationEnum> {
         EnumField::<GpuImageMipGenerationEnum>::new(self.0.push("mip_generation"), &self.1)
     }
 }
@@ -547,7 +609,7 @@ impl RecordAccessor for GpuImageBasisCompressionSettingsAccessor {
 }
 
 impl GpuImageBasisCompressionSettingsAccessor {
-    pub fn compression_type(&self) -> EnumFieldAccessor::<GpuImageBasisCompressionTypeEnum> {
+    pub fn compression_type(&self) -> EnumFieldAccessor<GpuImageBasisCompressionTypeEnum> {
         EnumFieldAccessor::<GpuImageBasisCompressionTypeEnum>::new(self.0.push("compression_type"))
     }
 
@@ -558,7 +620,10 @@ impl GpuImageBasisCompressionSettingsAccessor {
 pub struct GpuImageBasisCompressionSettingsRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for GpuImageBasisCompressionSettingsRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         GpuImageBasisCompressionSettingsRef(property_path, data_container)
     }
 }
@@ -570,18 +635,27 @@ impl<'a> RecordRef for GpuImageBasisCompressionSettingsRef<'a> {
 }
 
 impl<'a> GpuImageBasisCompressionSettingsRef<'a> {
-    pub fn compression_type(&self) -> EnumFieldRef::<GpuImageBasisCompressionTypeEnum> {
-        EnumFieldRef::<GpuImageBasisCompressionTypeEnum>::new(self.0.push("compression_type"), self.1.clone())
+    pub fn compression_type(&self) -> EnumFieldRef<GpuImageBasisCompressionTypeEnum> {
+        EnumFieldRef::<GpuImageBasisCompressionTypeEnum>::new(
+            self.0.push("compression_type"),
+            self.1.clone(),
+        )
     }
 
     pub fn quality(&self) -> U32FieldRef {
         U32FieldRef::new(self.0.push("quality"), self.1.clone())
     }
 }
-pub struct GpuImageBasisCompressionSettingsRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
+pub struct GpuImageBasisCompressionSettingsRefMut<'a>(
+    PropertyPath,
+    Rc<RefCell<DataContainerRefMut<'a>>>,
+);
 
 impl<'a> FieldRefMut<'a> for GpuImageBasisCompressionSettingsRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         GpuImageBasisCompressionSettingsRefMut(property_path, data_container.clone())
     }
 }
@@ -593,18 +667,26 @@ impl<'a> RecordRefMut for GpuImageBasisCompressionSettingsRefMut<'a> {
 }
 
 impl<'a> GpuImageBasisCompressionSettingsRefMut<'a> {
-    pub fn compression_type(self: &'a Self) -> EnumFieldRefMut::<GpuImageBasisCompressionTypeEnum> {
-        EnumFieldRefMut::<GpuImageBasisCompressionTypeEnum>::new(self.0.push("compression_type"), &self.1)
+    pub fn compression_type(
+        self: &'a Self
+    ) -> EnumFieldRefMut<'a, GpuImageBasisCompressionTypeEnum> {
+        EnumFieldRefMut::<GpuImageBasisCompressionTypeEnum>::new(
+            self.0.push("compression_type"),
+            &self.1,
+        )
     }
 
-    pub fn quality(self: &'a Self) -> U32FieldRefMut {
+    pub fn quality(self: &'a Self) -> U32FieldRefMut<'a> {
         U32FieldRefMut::new(self.0.push("quality"), &self.1)
     }
 }
 pub struct GpuImageBasisCompressionSettingsRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for GpuImageBasisCompressionSettingsRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         GpuImageBasisCompressionSettingsRecord(property_path, data_container.clone())
     }
 }
@@ -620,7 +702,7 @@ impl Record for GpuImageBasisCompressionSettingsRecord {
 }
 
 impl GpuImageBasisCompressionSettingsRecord {
-    pub fn compression_type(self: &Self) -> EnumField::<GpuImageBasisCompressionTypeEnum> {
+    pub fn compression_type(self: &Self) -> EnumField<GpuImageBasisCompressionTypeEnum> {
         EnumField::<GpuImageBasisCompressionTypeEnum>::new(self.0.push("compression_type"), &self.1)
     }
 
@@ -715,7 +797,10 @@ impl GpuImageImportedDataAccessor {
 pub struct GpuImageImportedDataRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for GpuImageImportedDataRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         GpuImageImportedDataRef(property_path, data_container)
     }
 }
@@ -742,7 +827,10 @@ impl<'a> GpuImageImportedDataRef<'a> {
 pub struct GpuImageImportedDataRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for GpuImageImportedDataRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         GpuImageImportedDataRefMut(property_path, data_container.clone())
     }
 }
@@ -754,22 +842,25 @@ impl<'a> RecordRefMut for GpuImageImportedDataRefMut<'a> {
 }
 
 impl<'a> GpuImageImportedDataRefMut<'a> {
-    pub fn height(self: &'a Self) -> U32FieldRefMut {
+    pub fn height(self: &'a Self) -> U32FieldRefMut<'a> {
         U32FieldRefMut::new(self.0.push("height"), &self.1)
     }
 
-    pub fn image_bytes(self: &'a Self) -> BytesFieldRefMut {
+    pub fn image_bytes(self: &'a Self) -> BytesFieldRefMut<'a> {
         BytesFieldRefMut::new(self.0.push("image_bytes"), &self.1)
     }
 
-    pub fn width(self: &'a Self) -> U32FieldRefMut {
+    pub fn width(self: &'a Self) -> U32FieldRefMut<'a> {
         U32FieldRefMut::new(self.0.push("width"), &self.1)
     }
 }
 pub struct GpuImageImportedDataRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for GpuImageImportedDataRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         GpuImageImportedDataRecord(property_path, data_container.clone())
     }
 }
@@ -844,14 +935,19 @@ impl RecordAccessor for GpuImageSubresourceLayerAccessor {
 }
 
 impl GpuImageSubresourceLayerAccessor {
-    pub fn mip_levels(&self) -> DynamicArrayFieldAccessor::<GpuImageSubresourceMipLevelAccessor> {
-        DynamicArrayFieldAccessor::<GpuImageSubresourceMipLevelAccessor>::new(self.0.push("mip_levels"))
+    pub fn mip_levels(&self) -> DynamicArrayFieldAccessor<GpuImageSubresourceMipLevelAccessor> {
+        DynamicArrayFieldAccessor::<GpuImageSubresourceMipLevelAccessor>::new(
+            self.0.push("mip_levels"),
+        )
     }
 }
 pub struct GpuImageSubresourceLayerRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for GpuImageSubresourceLayerRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         GpuImageSubresourceLayerRef(property_path, data_container)
     }
 }
@@ -863,14 +959,20 @@ impl<'a> RecordRef for GpuImageSubresourceLayerRef<'a> {
 }
 
 impl<'a> GpuImageSubresourceLayerRef<'a> {
-    pub fn mip_levels(&self) -> DynamicArrayFieldRef::<GpuImageSubresourceMipLevelRef> {
-        DynamicArrayFieldRef::<GpuImageSubresourceMipLevelRef>::new(self.0.push("mip_levels"), self.1.clone())
+    pub fn mip_levels(&self) -> DynamicArrayFieldRef<GpuImageSubresourceMipLevelRef> {
+        DynamicArrayFieldRef::<GpuImageSubresourceMipLevelRef>::new(
+            self.0.push("mip_levels"),
+            self.1.clone(),
+        )
     }
 }
 pub struct GpuImageSubresourceLayerRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for GpuImageSubresourceLayerRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         GpuImageSubresourceLayerRefMut(property_path, data_container.clone())
     }
 }
@@ -882,14 +984,22 @@ impl<'a> RecordRefMut for GpuImageSubresourceLayerRefMut<'a> {
 }
 
 impl<'a> GpuImageSubresourceLayerRefMut<'a> {
-    pub fn mip_levels(self: &'a Self) -> DynamicArrayFieldRefMut::<GpuImageSubresourceMipLevelRefMut> {
-        DynamicArrayFieldRefMut::<GpuImageSubresourceMipLevelRefMut>::new(self.0.push("mip_levels"), &self.1)
+    pub fn mip_levels(
+        self: &'a Self
+    ) -> DynamicArrayFieldRefMut<'a, GpuImageSubresourceMipLevelRefMut<'a>> {
+        DynamicArrayFieldRefMut::<GpuImageSubresourceMipLevelRefMut>::new(
+            self.0.push("mip_levels"),
+            &self.1,
+        )
     }
 }
 pub struct GpuImageSubresourceLayerRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for GpuImageSubresourceLayerRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         GpuImageSubresourceLayerRecord(property_path, data_container.clone())
     }
 }
@@ -905,8 +1015,11 @@ impl Record for GpuImageSubresourceLayerRecord {
 }
 
 impl GpuImageSubresourceLayerRecord {
-    pub fn mip_levels(self: &Self) -> DynamicArrayField::<GpuImageSubresourceMipLevelRecord> {
-        DynamicArrayField::<GpuImageSubresourceMipLevelRecord>::new(self.0.push("mip_levels"), &self.1)
+    pub fn mip_levels(self: &Self) -> DynamicArrayField<GpuImageSubresourceMipLevelRecord> {
+        DynamicArrayField::<GpuImageSubresourceMipLevelRecord>::new(
+            self.0.push("mip_levels"),
+            &self.1,
+        )
     }
 }
 #[derive(Default)]
@@ -940,7 +1053,10 @@ impl GpuImageSubresourceMipLevelAccessor {
 pub struct GpuImageSubresourceMipLevelRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for GpuImageSubresourceMipLevelRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         GpuImageSubresourceMipLevelRef(property_path, data_container)
     }
 }
@@ -964,10 +1080,16 @@ impl<'a> GpuImageSubresourceMipLevelRef<'a> {
         U32FieldRef::new(self.0.push("width"), self.1.clone())
     }
 }
-pub struct GpuImageSubresourceMipLevelRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
+pub struct GpuImageSubresourceMipLevelRefMut<'a>(
+    PropertyPath,
+    Rc<RefCell<DataContainerRefMut<'a>>>,
+);
 
 impl<'a> FieldRefMut<'a> for GpuImageSubresourceMipLevelRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         GpuImageSubresourceMipLevelRefMut(property_path, data_container.clone())
     }
 }
@@ -979,22 +1101,25 @@ impl<'a> RecordRefMut for GpuImageSubresourceMipLevelRefMut<'a> {
 }
 
 impl<'a> GpuImageSubresourceMipLevelRefMut<'a> {
-    pub fn bytes(self: &'a Self) -> BytesFieldRefMut {
+    pub fn bytes(self: &'a Self) -> BytesFieldRefMut<'a> {
         BytesFieldRefMut::new(self.0.push("bytes"), &self.1)
     }
 
-    pub fn height(self: &'a Self) -> U32FieldRefMut {
+    pub fn height(self: &'a Self) -> U32FieldRefMut<'a> {
         U32FieldRefMut::new(self.0.push("height"), &self.1)
     }
 
-    pub fn width(self: &'a Self) -> U32FieldRefMut {
+    pub fn width(self: &'a Self) -> U32FieldRefMut<'a> {
         U32FieldRefMut::new(self.0.push("width"), &self.1)
     }
 }
 pub struct GpuImageSubresourceMipLevelRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for GpuImageSubresourceMipLevelRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         GpuImageSubresourceMipLevelRecord(property_path, data_container.clone())
     }
 }
@@ -1049,7 +1174,10 @@ impl GraphicsPipelineShaderStageAccessor {
 pub struct GraphicsPipelineShaderStageRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for GraphicsPipelineShaderStageRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         GraphicsPipelineShaderStageRef(property_path, data_container)
     }
 }
@@ -1069,10 +1197,16 @@ impl<'a> GraphicsPipelineShaderStageRef<'a> {
         AssetRefFieldRef::new(self.0.push("shader_module"), self.1.clone())
     }
 }
-pub struct GraphicsPipelineShaderStageRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
+pub struct GraphicsPipelineShaderStageRefMut<'a>(
+    PropertyPath,
+    Rc<RefCell<DataContainerRefMut<'a>>>,
+);
 
 impl<'a> FieldRefMut<'a> for GraphicsPipelineShaderStageRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         GraphicsPipelineShaderStageRefMut(property_path, data_container.clone())
     }
 }
@@ -1084,18 +1218,21 @@ impl<'a> RecordRefMut for GraphicsPipelineShaderStageRefMut<'a> {
 }
 
 impl<'a> GraphicsPipelineShaderStageRefMut<'a> {
-    pub fn entry_name(self: &'a Self) -> StringFieldRefMut {
+    pub fn entry_name(self: &'a Self) -> StringFieldRefMut<'a> {
         StringFieldRefMut::new(self.0.push("entry_name"), &self.1)
     }
 
-    pub fn shader_module(self: &'a Self) -> AssetRefFieldRefMut {
+    pub fn shader_module(self: &'a Self) -> AssetRefFieldRefMut<'a> {
         AssetRefFieldRefMut::new(self.0.push("shader_module"), &self.1)
     }
 }
 pub struct GraphicsPipelineShaderStageRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for GraphicsPipelineShaderStageRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         GraphicsPipelineShaderStageRecord(property_path, data_container.clone())
     }
 }
@@ -1135,14 +1272,17 @@ impl RecordAccessor for MaterialAssetAccessor {
 }
 
 impl MaterialAssetAccessor {
-    pub fn passes(&self) -> DynamicArrayFieldAccessor::<MaterialPassAccessor> {
+    pub fn passes(&self) -> DynamicArrayFieldAccessor<MaterialPassAccessor> {
         DynamicArrayFieldAccessor::<MaterialPassAccessor>::new(self.0.push("passes"))
     }
 }
 pub struct MaterialAssetRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for MaterialAssetRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         MaterialAssetRef(property_path, data_container)
     }
 }
@@ -1154,14 +1294,17 @@ impl<'a> RecordRef for MaterialAssetRef<'a> {
 }
 
 impl<'a> MaterialAssetRef<'a> {
-    pub fn passes(&self) -> DynamicArrayFieldRef::<MaterialPassRef> {
+    pub fn passes(&self) -> DynamicArrayFieldRef<MaterialPassRef> {
         DynamicArrayFieldRef::<MaterialPassRef>::new(self.0.push("passes"), self.1.clone())
     }
 }
 pub struct MaterialAssetRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for MaterialAssetRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         MaterialAssetRefMut(property_path, data_container.clone())
     }
 }
@@ -1173,14 +1316,17 @@ impl<'a> RecordRefMut for MaterialAssetRefMut<'a> {
 }
 
 impl<'a> MaterialAssetRefMut<'a> {
-    pub fn passes(self: &'a Self) -> DynamicArrayFieldRefMut::<MaterialPassRefMut> {
+    pub fn passes(self: &'a Self) -> DynamicArrayFieldRefMut<'a, MaterialPassRefMut<'a>> {
         DynamicArrayFieldRefMut::<MaterialPassRefMut>::new(self.0.push("passes"), &self.1)
     }
 }
 pub struct MaterialAssetRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for MaterialAssetRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         MaterialAssetRecord(property_path, data_container.clone())
     }
 }
@@ -1196,7 +1342,7 @@ impl Record for MaterialAssetRecord {
 }
 
 impl MaterialAssetRecord {
-    pub fn passes(self: &Self) -> DynamicArrayField::<MaterialPassRecord> {
+    pub fn passes(self: &Self) -> DynamicArrayField<MaterialPassRecord> {
         DynamicArrayField::<MaterialPassRecord>::new(self.0.push("passes"), &self.1)
     }
 }
@@ -1220,14 +1366,21 @@ impl MaterialInstanceAssetAccessor {
         AssetRefFieldAccessor::new(self.0.push("material"))
     }
 
-    pub fn slot_assignments(&self) -> DynamicArrayFieldAccessor::<MaterialInstanceSlotAssignmentAccessor> {
-        DynamicArrayFieldAccessor::<MaterialInstanceSlotAssignmentAccessor>::new(self.0.push("slot_assignments"))
+    pub fn slot_assignments(
+        &self
+    ) -> DynamicArrayFieldAccessor<MaterialInstanceSlotAssignmentAccessor> {
+        DynamicArrayFieldAccessor::<MaterialInstanceSlotAssignmentAccessor>::new(
+            self.0.push("slot_assignments"),
+        )
     }
 }
 pub struct MaterialInstanceAssetRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for MaterialInstanceAssetRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         MaterialInstanceAssetRef(property_path, data_container)
     }
 }
@@ -1243,14 +1396,20 @@ impl<'a> MaterialInstanceAssetRef<'a> {
         AssetRefFieldRef::new(self.0.push("material"), self.1.clone())
     }
 
-    pub fn slot_assignments(&self) -> DynamicArrayFieldRef::<MaterialInstanceSlotAssignmentRef> {
-        DynamicArrayFieldRef::<MaterialInstanceSlotAssignmentRef>::new(self.0.push("slot_assignments"), self.1.clone())
+    pub fn slot_assignments(&self) -> DynamicArrayFieldRef<MaterialInstanceSlotAssignmentRef> {
+        DynamicArrayFieldRef::<MaterialInstanceSlotAssignmentRef>::new(
+            self.0.push("slot_assignments"),
+            self.1.clone(),
+        )
     }
 }
 pub struct MaterialInstanceAssetRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for MaterialInstanceAssetRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         MaterialInstanceAssetRefMut(property_path, data_container.clone())
     }
 }
@@ -1262,18 +1421,26 @@ impl<'a> RecordRefMut for MaterialInstanceAssetRefMut<'a> {
 }
 
 impl<'a> MaterialInstanceAssetRefMut<'a> {
-    pub fn material(self: &'a Self) -> AssetRefFieldRefMut {
+    pub fn material(self: &'a Self) -> AssetRefFieldRefMut<'a> {
         AssetRefFieldRefMut::new(self.0.push("material"), &self.1)
     }
 
-    pub fn slot_assignments(self: &'a Self) -> DynamicArrayFieldRefMut::<MaterialInstanceSlotAssignmentRefMut> {
-        DynamicArrayFieldRefMut::<MaterialInstanceSlotAssignmentRefMut>::new(self.0.push("slot_assignments"), &self.1)
+    pub fn slot_assignments(
+        self: &'a Self
+    ) -> DynamicArrayFieldRefMut<'a, MaterialInstanceSlotAssignmentRefMut<'a>> {
+        DynamicArrayFieldRefMut::<MaterialInstanceSlotAssignmentRefMut>::new(
+            self.0.push("slot_assignments"),
+            &self.1,
+        )
     }
 }
 pub struct MaterialInstanceAssetRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for MaterialInstanceAssetRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         MaterialInstanceAssetRecord(property_path, data_container.clone())
     }
 }
@@ -1293,8 +1460,13 @@ impl MaterialInstanceAssetRecord {
         AssetRefField::new(self.0.push("material"), &self.1)
     }
 
-    pub fn slot_assignments(self: &Self) -> DynamicArrayField::<MaterialInstanceSlotAssignmentRecord> {
-        DynamicArrayField::<MaterialInstanceSlotAssignmentRecord>::new(self.0.push("slot_assignments"), &self.1)
+    pub fn slot_assignments(
+        self: &Self
+    ) -> DynamicArrayField<MaterialInstanceSlotAssignmentRecord> {
+        DynamicArrayField::<MaterialInstanceSlotAssignmentRecord>::new(
+            self.0.push("slot_assignments"),
+            &self.1,
+        )
     }
 }
 #[derive(Default)]
@@ -1317,7 +1489,7 @@ impl MaterialInstanceSlotAssignmentAccessor {
         U32FieldAccessor::new(self.0.push("array_index"))
     }
 
-    pub fn buffer_data(&self) -> NullableFieldAccessor::<BytesFieldAccessor> {
+    pub fn buffer_data(&self) -> NullableFieldAccessor<BytesFieldAccessor> {
         NullableFieldAccessor::<BytesFieldAccessor>::new(self.0.push("buffer_data"))
     }
 
@@ -1336,7 +1508,10 @@ impl MaterialInstanceSlotAssignmentAccessor {
 pub struct MaterialInstanceSlotAssignmentRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for MaterialInstanceSlotAssignmentRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         MaterialInstanceSlotAssignmentRef(property_path, data_container)
     }
 }
@@ -1352,7 +1527,7 @@ impl<'a> MaterialInstanceSlotAssignmentRef<'a> {
         U32FieldRef::new(self.0.push("array_index"), self.1.clone())
     }
 
-    pub fn buffer_data(&self) -> NullableFieldRef::<BytesFieldRef> {
+    pub fn buffer_data(&self) -> NullableFieldRef<BytesFieldRef> {
         NullableFieldRef::<BytesFieldRef>::new(self.0.push("buffer_data"), self.1.clone())
     }
 
@@ -1368,10 +1543,16 @@ impl<'a> MaterialInstanceSlotAssignmentRef<'a> {
         StringFieldRef::new(self.0.push("slot_name"), self.1.clone())
     }
 }
-pub struct MaterialInstanceSlotAssignmentRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
+pub struct MaterialInstanceSlotAssignmentRefMut<'a>(
+    PropertyPath,
+    Rc<RefCell<DataContainerRefMut<'a>>>,
+);
 
 impl<'a> FieldRefMut<'a> for MaterialInstanceSlotAssignmentRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         MaterialInstanceSlotAssignmentRefMut(property_path, data_container.clone())
     }
 }
@@ -1383,30 +1564,33 @@ impl<'a> RecordRefMut for MaterialInstanceSlotAssignmentRefMut<'a> {
 }
 
 impl<'a> MaterialInstanceSlotAssignmentRefMut<'a> {
-    pub fn array_index(self: &'a Self) -> U32FieldRefMut {
+    pub fn array_index(self: &'a Self) -> U32FieldRefMut<'a> {
         U32FieldRefMut::new(self.0.push("array_index"), &self.1)
     }
 
-    pub fn buffer_data(self: &'a Self) -> NullableFieldRefMut::<BytesFieldRefMut> {
+    pub fn buffer_data(self: &'a Self) -> NullableFieldRefMut<'a, BytesFieldRefMut<'a>> {
         NullableFieldRefMut::<BytesFieldRefMut>::new(self.0.push("buffer_data"), &self.1)
     }
 
-    pub fn image(self: &'a Self) -> AssetRefFieldRefMut {
+    pub fn image(self: &'a Self) -> AssetRefFieldRefMut<'a> {
         AssetRefFieldRefMut::new(self.0.push("image"), &self.1)
     }
 
-    pub fn sampler(self: &'a Self) -> StringFieldRefMut {
+    pub fn sampler(self: &'a Self) -> StringFieldRefMut<'a> {
         StringFieldRefMut::new(self.0.push("sampler"), &self.1)
     }
 
-    pub fn slot_name(self: &'a Self) -> StringFieldRefMut {
+    pub fn slot_name(self: &'a Self) -> StringFieldRefMut<'a> {
         StringFieldRefMut::new(self.0.push("slot_name"), &self.1)
     }
 }
 pub struct MaterialInstanceSlotAssignmentRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for MaterialInstanceSlotAssignmentRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         MaterialInstanceSlotAssignmentRecord(property_path, data_container.clone())
     }
 }
@@ -1426,7 +1610,7 @@ impl MaterialInstanceSlotAssignmentRecord {
         U32Field::new(self.0.push("array_index"), &self.1)
     }
 
-    pub fn buffer_data(self: &Self) -> NullableField::<BytesField> {
+    pub fn buffer_data(self: &Self) -> NullableField<BytesField> {
         NullableField::<BytesField>::new(self.0.push("buffer_data"), &self.1)
     }
 
@@ -1481,7 +1665,10 @@ impl MaterialPassAccessor {
 pub struct MaterialPassRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for MaterialPassRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         MaterialPassRef(property_path, data_container)
     }
 }
@@ -1516,7 +1703,10 @@ impl<'a> MaterialPassRef<'a> {
 pub struct MaterialPassRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for MaterialPassRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         MaterialPassRefMut(property_path, data_container.clone())
     }
 }
@@ -1528,30 +1718,33 @@ impl<'a> RecordRefMut for MaterialPassRefMut<'a> {
 }
 
 impl<'a> MaterialPassRefMut<'a> {
-    pub fn fixed_function_state(self: &'a Self) -> StringFieldRefMut {
+    pub fn fixed_function_state(self: &'a Self) -> StringFieldRefMut<'a> {
         StringFieldRefMut::new(self.0.push("fixed_function_state"), &self.1)
     }
 
-    pub fn fragment_stage(self: &'a Self) -> GraphicsPipelineShaderStageRefMut {
+    pub fn fragment_stage(self: &'a Self) -> GraphicsPipelineShaderStageRefMut<'a> {
         GraphicsPipelineShaderStageRefMut::new(self.0.push("fragment_stage"), &self.1)
     }
 
-    pub fn name(self: &'a Self) -> StringFieldRefMut {
+    pub fn name(self: &'a Self) -> StringFieldRefMut<'a> {
         StringFieldRefMut::new(self.0.push("name"), &self.1)
     }
 
-    pub fn phase(self: &'a Self) -> StringFieldRefMut {
+    pub fn phase(self: &'a Self) -> StringFieldRefMut<'a> {
         StringFieldRefMut::new(self.0.push("phase"), &self.1)
     }
 
-    pub fn vertex_stage(self: &'a Self) -> GraphicsPipelineShaderStageRefMut {
+    pub fn vertex_stage(self: &'a Self) -> GraphicsPipelineShaderStageRefMut<'a> {
         GraphicsPipelineShaderStageRefMut::new(self.0.push("vertex_stage"), &self.1)
     }
 }
 pub struct MaterialPassRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for MaterialPassRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         MaterialPassRecord(property_path, data_container.clone())
     }
 }
@@ -1602,12 +1795,14 @@ impl RecordAccessor for ShaderPackageAssetAccessor {
     }
 }
 
-impl ShaderPackageAssetAccessor {
-}
+impl ShaderPackageAssetAccessor {}
 pub struct ShaderPackageAssetRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for ShaderPackageAssetRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         ShaderPackageAssetRef(property_path, data_container)
     }
 }
@@ -1618,12 +1813,14 @@ impl<'a> RecordRef for ShaderPackageAssetRef<'a> {
     }
 }
 
-impl<'a> ShaderPackageAssetRef<'a> {
-}
+impl<'a> ShaderPackageAssetRef<'a> {}
 pub struct ShaderPackageAssetRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for ShaderPackageAssetRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         ShaderPackageAssetRefMut(property_path, data_container.clone())
     }
 }
@@ -1634,12 +1831,14 @@ impl<'a> RecordRefMut for ShaderPackageAssetRefMut<'a> {
     }
 }
 
-impl<'a> ShaderPackageAssetRefMut<'a> {
-}
+impl<'a> ShaderPackageAssetRefMut<'a> {}
 pub struct ShaderPackageAssetRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for ShaderPackageAssetRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         ShaderPackageAssetRecord(property_path, data_container.clone())
     }
 }
@@ -1654,8 +1853,7 @@ impl Record for ShaderPackageAssetRecord {
     }
 }
 
-impl ShaderPackageAssetRecord {
-}
+impl ShaderPackageAssetRecord {}
 #[derive(Default)]
 pub struct ShaderPackageImportedDataAccessor(PropertyPath);
 
@@ -1679,7 +1877,10 @@ impl ShaderPackageImportedDataAccessor {
 pub struct ShaderPackageImportedDataRef<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for ShaderPackageImportedDataRef<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         ShaderPackageImportedDataRef(property_path, data_container)
     }
 }
@@ -1698,7 +1899,10 @@ impl<'a> ShaderPackageImportedDataRef<'a> {
 pub struct ShaderPackageImportedDataRefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for ShaderPackageImportedDataRefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         ShaderPackageImportedDataRefMut(property_path, data_container.clone())
     }
 }
@@ -1710,14 +1914,17 @@ impl<'a> RecordRefMut for ShaderPackageImportedDataRefMut<'a> {
 }
 
 impl<'a> ShaderPackageImportedDataRefMut<'a> {
-    pub fn bytes(self: &'a Self) -> BytesFieldRefMut {
+    pub fn bytes(self: &'a Self) -> BytesFieldRefMut<'a> {
         BytesFieldRefMut::new(self.0.push("bytes"), &self.1)
     }
 }
 pub struct ShaderPackageImportedDataRecord(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for ShaderPackageImportedDataRecord {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         ShaderPackageImportedDataRecord(property_path, data_container.clone())
     }
 }
@@ -1768,7 +1975,10 @@ impl Vec3Accessor {
 pub struct Vec3Ref<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for Vec3Ref<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         Vec3Ref(property_path, data_container)
     }
 }
@@ -1795,7 +2005,10 @@ impl<'a> Vec3Ref<'a> {
 pub struct Vec3RefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for Vec3RefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         Vec3RefMut(property_path, data_container.clone())
     }
 }
@@ -1807,22 +2020,25 @@ impl<'a> RecordRefMut for Vec3RefMut<'a> {
 }
 
 impl<'a> Vec3RefMut<'a> {
-    pub fn x(self: &'a Self) -> F32FieldRefMut {
+    pub fn x(self: &'a Self) -> F32FieldRefMut<'a> {
         F32FieldRefMut::new(self.0.push("x"), &self.1)
     }
 
-    pub fn y(self: &'a Self) -> F32FieldRefMut {
+    pub fn y(self: &'a Self) -> F32FieldRefMut<'a> {
         F32FieldRefMut::new(self.0.push("y"), &self.1)
     }
 
-    pub fn z(self: &'a Self) -> F32FieldRefMut {
+    pub fn z(self: &'a Self) -> F32FieldRefMut<'a> {
         F32FieldRefMut::new(self.0.push("z"), &self.1)
     }
 }
 pub struct Vec3Record(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for Vec3Record {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         Vec3Record(property_path, data_container.clone())
     }
 }
@@ -1885,7 +2101,10 @@ impl Vec4Accessor {
 pub struct Vec4Ref<'a>(PropertyPath, DataContainerRef<'a>);
 
 impl<'a> FieldRef<'a> for Vec4Ref<'a> {
-    fn new(property_path: PropertyPath, data_container: DataContainerRef<'a>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: DataContainerRef<'a>,
+    ) -> Self {
         Vec4Ref(property_path, data_container)
     }
 }
@@ -1916,7 +2135,10 @@ impl<'a> Vec4Ref<'a> {
 pub struct Vec4RefMut<'a>(PropertyPath, Rc<RefCell<DataContainerRefMut<'a>>>);
 
 impl<'a> FieldRefMut<'a> for Vec4RefMut<'a> {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<DataContainerRefMut<'a>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<DataContainerRefMut<'a>>>,
+    ) -> Self {
         Vec4RefMut(property_path, data_container.clone())
     }
 }
@@ -1928,26 +2150,29 @@ impl<'a> RecordRefMut for Vec4RefMut<'a> {
 }
 
 impl<'a> Vec4RefMut<'a> {
-    pub fn w(self: &'a Self) -> F32FieldRefMut {
+    pub fn w(self: &'a Self) -> F32FieldRefMut<'a> {
         F32FieldRefMut::new(self.0.push("w"), &self.1)
     }
 
-    pub fn x(self: &'a Self) -> F32FieldRefMut {
+    pub fn x(self: &'a Self) -> F32FieldRefMut<'a> {
         F32FieldRefMut::new(self.0.push("x"), &self.1)
     }
 
-    pub fn y(self: &'a Self) -> F32FieldRefMut {
+    pub fn y(self: &'a Self) -> F32FieldRefMut<'a> {
         F32FieldRefMut::new(self.0.push("y"), &self.1)
     }
 
-    pub fn z(self: &'a Self) -> F32FieldRefMut {
+    pub fn z(self: &'a Self) -> F32FieldRefMut<'a> {
         F32FieldRefMut::new(self.0.push("z"), &self.1)
     }
 }
 pub struct Vec4Record(PropertyPath, Rc<RefCell<Option<DataContainer>>>);
 
 impl Field for Vec4Record {
-    fn new(property_path: PropertyPath, data_container: &Rc<RefCell<Option<DataContainer>>>) -> Self {
+    fn new(
+        property_path: PropertyPath,
+        data_container: &Rc<RefCell<Option<DataContainer>>>,
+    ) -> Self {
         Vec4Record(property_path, data_container.clone())
     }
 }
