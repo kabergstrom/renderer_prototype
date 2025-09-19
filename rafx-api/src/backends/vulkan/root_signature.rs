@@ -81,6 +81,14 @@ impl Drop for RafxRootSignatureVulkanInner {
 pub struct RafxRootSignatureVulkan {
     pub(crate) inner: Arc<RafxRootSignatureVulkanInner>,
 }
+impl PartialEq for RafxRootSignatureVulkan {
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool {
+        std::sync::Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
 
 impl RafxRootSignatureVulkan {
     pub fn device_context(&self) -> &RafxDeviceContextVulkan {

@@ -110,21 +110,21 @@ fn generate_rust_file(
 ) -> Result<String, String> {
     let mut rust_code = Vec::<String>::default();
 
-    rust_header(&mut rust_code, for_rafx_framework_crate);
+    //rust_header(&mut rust_code, for_rafx_framework_crate);
 
     let structs = rust_structs(&mut rust_code, builtin_types, user_types)?;
 
     rust_binding_constants(&mut rust_code, &parsed_declarations);
 
-    rust_binding_wrappers(
+    /*rust_binding_wrappers(
         &mut rust_code,
         builtin_types,
         user_types,
         &parsed_declarations,
         reflected_entry_point,
-    )?;
+    )?;*/
 
-    rust_tests(&mut rust_code, &structs);
+    //rust_tests(&mut rust_code, &structs);
 
     let mut rust_code_str = String::default();
     for s in rust_code {

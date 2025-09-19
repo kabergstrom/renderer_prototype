@@ -91,6 +91,14 @@ unsafe impl Sync for RafxRootSignatureDx12Inner {}
 pub struct RafxRootSignatureDx12 {
     pub(crate) inner: Arc<RafxRootSignatureDx12Inner>,
 }
+impl PartialEq for RafxRootSignatureVulkan {
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool {
+        std::sync::Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
 
 impl RafxRootSignatureDx12 {
     pub fn device_context(&self) -> &RafxDeviceContextDx12 {

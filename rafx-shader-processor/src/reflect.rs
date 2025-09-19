@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::shader_types::{
     element_count, generate_struct, MemoryLayout, TypeAlignmentInfo, UserType,
 };
@@ -893,23 +895,18 @@ pub(crate) fn reflect_data(
     declarations: &super::parse_declarations::ParseDeclarationsResult,
     require_semantics: bool,
 ) -> RafxResult<ShaderProcessorRefectionData> {
-    let mut reflected_entry_points = Vec::default();
+    let mut entry_point_data = Vec::new();
     for entry_point in artifact
         .entry_points()
         .map_err(|_x| "could not get entry point from reflection data")?
     {
-        let entry_point_name = entry_point.name;
-        println!(
-            "processing entry point {entry_point_name} of execution model {:?}",
-            entry_point.execution_model
-        );
         let stage_flags = map_shader_stage_flags(entry_point.execution_model)?;
 
         let shader_resources = artifact
             .shader_resources()
             .map_err(|_x| "could not get resources from reflection data")?;
 
-        let mut dsc_bindings = get_all_reflected_bindings(
+        let bindings = get_all_reflected_bindings(
             builtin_types,
             user_types,
             &shader_resources,
@@ -918,124 +915,131 @@ pub(crate) fn reflect_data(
             stage_flags,
         )?;
 
-        //TODO: Assign dx12 values?
-        //TODO: Assign MSL values?
-        //TODO: This might not work because we need to merge resources between stages
+        entry_point_data.push((entry_point, bindings, stage_flags, shader_resources));
+    }
+    let mut merged_resources = BTreeMap::new();
 
-        dsc_bindings.sort_by(|lhs, rhs| {
-            if lhs.resource.set_index != rhs.resource.set_index {
-                lhs.resource.set_index.cmp(&rhs.resource.set_index)
-            } else {
-                lhs.resource.binding.cmp(&rhs.resource.binding)
-            }
-        });
-
-        // If we update this constant, update the arrays in this function
-        assert_eq!(MAX_DESCRIPTOR_SET_LAYOUTS, 4);
-
-        // Create separate, global counters for each DX12 register type.
-        let mut next_cbv_register = 0;
-        let mut next_srv_register = 0;
-        let mut next_uav_register = 0;
-        let mut next_sampler_register = 0;
-
-        let mut max_set_index = -1;
-        for binding in &mut dsc_bindings {
-            if binding
+    for (_, bindings, _, _) in &entry_point_data {
+        for binding in bindings {
+            merged_resources
+                .entry((binding.resource.set_index, binding.resource.binding))
+                .or_insert_with(|| binding.clone())
                 .resource
-                .resource_type
-                .intersects(RafxResourceType::ROOT_CONSTANT)
-            {
-                continue;
-            }
+                .used_in_shader_stages |= binding.resource.used_in_shader_stages;
+        }
+    }
 
-            max_set_index = max_set_index.max(binding.resource.set_index as i32);
+    let mut merged_bindings = merged_resources.into_values().collect::<Vec<_>>();
+    merged_bindings.sort_by_key(|r| (r.resource.set_index, r.resource.binding));
 
-            binding.resource.dx12_space = Some(binding.resource.set_index);
+    // If we update this constant, update the arrays in this function
+    assert_eq!(MAX_DESCRIPTOR_SET_LAYOUTS, 4);
 
-            // Assign the register index from the correct resource type's counter.
-            let element_count = binding.resource.element_count_normalized();
-            let register = if binding
-                .resource
-                .resource_type
-                .intersects(RafxResourceType::UNIFORM_BUFFER)
-            {
-                let reg = next_cbv_register;
-                next_cbv_register += element_count;
-                println!("uniform buffer: {:?}", binding.resource);
-                reg
-            } else if binding.resource.resource_type.intersects(
-                RafxResourceType::TEXTURE
-                    | RafxResourceType::BUFFER
-                    | RafxResourceType::TEXEL_BUFFER,
-            ) {
-                let reg = next_srv_register;
-                next_srv_register += element_count;
-                println!("srv: {:?}", binding.resource);
-                reg
-            } else if binding.resource.resource_type.intersects(
-                RafxResourceType::TEXTURE_READ_WRITE
-                    | RafxResourceType::BUFFER_READ_WRITE
-                    | RafxResourceType::TEXEL_BUFFER_READ_WRITE,
-            ) {
-                let reg = next_uav_register;
-                next_uav_register += element_count;
-                println!("uav: {:?}", binding.resource);
-                reg
-            } else if binding
-                .resource
-                .resource_type
-                .intersects(RafxResourceType::SAMPLER)
-            {
-                let reg = next_sampler_register;
-                next_sampler_register += element_count;
-                println!("sampler: {:?}", binding.resource);
-                reg
-            } else {
-                // Should not happen for descriptor-bound resources.
-                // Default to 0 if it's an unknown type to avoid a compile error.
-                println!("unknown: {:?}", binding.resource);
-                0
-            };
+    // Create separate, global counters for each DX12 register type.
+    let mut next_cbv_register = 0;
+    let mut next_srv_register = 0;
+    let mut next_uav_register = 0;
+    let mut next_sampler_register = 0;
 
-            binding.resource.dx12_reg = Some(register);
+    let mut max_set_index = -1;
+    for binding in &mut merged_bindings {
+        if binding
+            .resource
+            .resource_type
+            .intersects(RafxResourceType::ROOT_CONSTANT)
+        {
+            continue;
         }
 
-        let push_constant_dx12_space = max_set_index + 1;
+        max_set_index = max_set_index.max(binding.resource.set_index as i32);
 
-        // stage inputs
-        // stage outputs
-        // subpass inputs
-        // atomic counters
-        // push constant buffers
+        binding.resource.dx12_space = Some(binding.resource.set_index);
+
+        let element_count = binding.resource.element_count_normalized();
+        let register = if binding
+            .resource
+            .resource_type
+            .intersects(RafxResourceType::UNIFORM_BUFFER)
+        {
+            let reg = next_cbv_register;
+            next_cbv_register += element_count;
+            println!("uniform buffer: {:?}", binding.resource);
+            reg
+        } else if binding.resource.resource_type.intersects(
+            RafxResourceType::TEXTURE | RafxResourceType::BUFFER | RafxResourceType::TEXEL_BUFFER,
+        ) {
+            let reg = next_srv_register;
+            next_srv_register += element_count;
+            println!("srv: {:?}", binding.resource);
+            reg
+        } else if binding.resource.resource_type.intersects(
+            RafxResourceType::TEXTURE_READ_WRITE
+                | RafxResourceType::BUFFER_READ_WRITE
+                | RafxResourceType::TEXEL_BUFFER_READ_WRITE,
+        ) {
+            let reg = next_uav_register;
+            next_uav_register += element_count;
+            println!("uav: {:?}", binding.resource);
+            reg
+        } else if binding
+            .resource
+            .resource_type
+            .intersects(RafxResourceType::SAMPLER)
+        {
+            let reg = next_sampler_register;
+            next_sampler_register += element_count;
+            println!("sampler: {:?}", binding.resource);
+            reg
+        } else {
+            // Should not happen for descriptor-bound resources.
+            // Default to 0 if it's an unknown type to avoid a compile error.
+            println!("unknown: {:?}", binding.resource);
+            0
+        };
+
+        binding.resource.dx12_reg = Some(register);
+    }
+
+    let final_register_map: BTreeMap<(u32, u32), &RafxShaderResource> = merged_bindings
+        .iter()
+        .map(|b| ((b.resource.set_index, b.resource.binding), &b.resource))
+        .collect();
+
+    let mut reflected_entry_points = Vec::new();
+
+    for (entry_point, mut dsc_bindings, stage_flags, shader_resources) in entry_point_data {
+        // Update this stage's bindings with the globally assigned register info
+        for binding in &mut dsc_bindings {
+            if let Some(final_resource) =
+                final_register_map.get(&(binding.resource.set_index, binding.resource.binding))
+            {
+                binding.resource.dx12_reg = final_resource.dx12_reg;
+                binding.resource.dx12_space = final_resource.dx12_space;
+                // Also update the merged stage flags so each stage has the full picture
+                binding.resource.used_in_shader_stages = final_resource.used_in_shader_stages;
+            }
+        }
 
         let mut descriptor_set_layouts: Vec<Option<RafxReflectedDescriptorSetLayout>> = vec![];
         let mut rafx_bindings = Vec::default();
-        for binding in dsc_bindings {
+        for binding in &dsc_bindings {
             rafx_bindings.push(binding.resource.clone());
-
             while descriptor_set_layouts.len() <= binding.resource.set_index as usize {
                 descriptor_set_layouts.push(None);
             }
-
-            match &mut descriptor_set_layouts[binding.resource.set_index as usize] {
-                Some(x) => x.bindings.push(binding),
-                x @ None => {
-                    *x = Some(RafxReflectedDescriptorSetLayout {
-                        bindings: vec![binding],
-                    })
-                }
+            if let Some(layout) = &mut descriptor_set_layouts[binding.resource.set_index as usize] {
+                layout.bindings.push(binding.clone());
+            } else {
+                descriptor_set_layouts[binding.resource.set_index as usize] =
+                    Some(RafxReflectedDescriptorSetLayout {
+                        bindings: vec![binding.clone()],
+                    });
             }
         }
-        let all_resources = &shader_resources
-            .all_resources()
-            .map_err(|_e| "failed getting all resources from reflection data")?;
-        //TODO: This is using a list of push constants but GLSL disallows multiple within
-        // the same file
+
+        let push_constant_dx12_space = max_set_index + 1;
+        let all_resources = &shader_resources.all_resources().unwrap();
         for push_constant in &all_resources.push_constant_buffers {
-            // let declared_size = artifact
-            //     .get_declared_struct_size(push_constant.type_id)
-            //     .unwrap();
             let push_constant_type = artifact.type_description(push_constant.type_id).unwrap();
             let spirv_cross2::reflect::TypeSizeHint::Static(declared_size) =
                 push_constant_type.size_hint
@@ -1045,7 +1049,6 @@ pub(crate) fn reflect_data(
                     push_constant.name, push_constant_type.size_hint
                 ))?
             };
-
             let resource = RafxShaderResource {
                 resource_type: RafxResourceType::ROOT_CONSTANT,
                 size_in_bytes: declared_size as u32,
@@ -1058,40 +1061,47 @@ pub(crate) fn reflect_data(
                 ..Default::default()
             };
             resource.validate()?;
-
             rafx_bindings.push(resource);
         }
 
-        //TODO: Store the type and verify that the format associated in the game i.e. R32G32B32 is
-        // something reasonable (like vec3).
         let mut dsc_vertex_inputs = Vec::default();
         if entry_point.execution_model == spirv_cross2::spirv::ExecutionModel::Vertex {
             for resource in &all_resources.stage_inputs {
                 let name = &resource.name;
                 let location = artifact
                     .decoration(resource.id, spirv_cross2::spirv::Decoration::Location)
-                    .map_err(|_x| "could not get descriptor binding index from reflection data")?;
+                    .map_err(|_x| "could not get location")?;
                 let Some(DecorationValue::Literal(location)) = location else {
-                    Err("could not get descriptor binding index from reflection data")?
+                    Err("could not get location literal")?
                 };
-
-                let parsed_binding = declarations.bindings.iter().find(|x| x.parsed.layout_parts.location == Some(location as usize))
-                    .or_else(|| declarations.bindings.iter().find(|x| x.parsed.instance_name == *name))
-                    .ok_or_else(|| format!("A resource named {} in spirv reflection data was not matched up to a resource scanned in source code.", resource.name))?;
-
-                let semantic = &parsed_binding
+                let parsed_binding = declarations
+                    .bindings
+                    .iter()
+                    .find(|x| x.parsed.layout_parts.location == Some(location as usize))
+                    .or_else(|| {
+                        declarations
+                            .bindings
+                            .iter()
+                            .find(|x| x.parsed.instance_name == *name)
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "Resource named {} was not matched to a scanned resource.",
+                            name
+                        )
+                    })?;
+                let semantic = parsed_binding
                     .annotations
                     .semantic
                     .as_ref()
                     .map(|x| x.0.clone());
-
                 let semantic = if require_semantics {
-                    semantic.clone().ok_or_else(|| format!("No semantic annotation for vertex input '{}'. All vertex inputs must have a semantic annotation if generating rust code, HLSL, and/or cooked shaders.", name))?
+                    semantic
+                        .clone()
+                        .ok_or_else(|| format!("No semantic for vertex input '{}'", name))?
                 } else {
                     "".to_string()
                 };
-
-                // TODO(dvd): Might need other special type handling here.
                 if parsed_binding.parsed.type_name == "mat4" {
                     for index in 0..4 {
                         dsc_vertex_inputs.push(RafxReflectedVertexInput {
@@ -1110,26 +1120,18 @@ pub(crate) fn reflect_data(
             }
         }
 
-        // if let Some(group_size) = &declarations.group_size {
-        //     assert_eq!(entry_point.work_group_size.x, group_size.x);
-        //     assert_eq!(entry_point.work_group_size.y, group_size.y);
-        //     assert_eq!(entry_point.work_group_size.z, group_size.z);
-        // }
-
-        let rafx_reflection = RafxShaderStageReflection {
-            shader_stage: stage_flags,
-            resources: rafx_bindings,
-            entry_point_name: entry_point_name.to_string(),
-            compute_threads_per_group: declarations
-                .group_size
-                .as_ref()
-                .map(|group_size| [group_size.x, group_size.y, group_size.z]),
-        };
-
         reflected_entry_points.push(RafxReflectedEntryPoint {
             descriptor_set_layouts,
             vertex_inputs: dsc_vertex_inputs,
-            rafx_api_reflection: rafx_reflection,
+            rafx_api_reflection: RafxShaderStageReflection {
+                shader_stage: stage_flags,
+                resources: rafx_bindings, // This list is now correctly scoped to the stage
+                entry_point_name: entry_point.name.to_string(),
+                compute_threads_per_group: declarations
+                    .group_size
+                    .as_ref()
+                    .map(|g| [g.x, g.y, g.z]),
+            },
         });
     }
 

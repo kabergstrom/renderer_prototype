@@ -25,7 +25,7 @@ use crate::{RafxDescriptorIndex, RafxPipelineType, RafxShaderStageFlags};
 ///
 /// A root signature is created from shader metadata that can be manually supplied or generated via
 /// reflection.
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum RafxRootSignature {
     #[cfg(feature = "rafx-dx12")]
     Dx12(RafxRootSignatureDx12),

@@ -95,6 +95,14 @@ unsafe impl Sync for RafxRootSignatureMetalInner {}
 pub struct RafxRootSignatureMetal {
     pub(crate) inner: Arc<RafxRootSignatureMetalInner>,
 }
+impl PartialEq for RafxRootSignatureMetal {
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool {
+        std::sync::Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
 
 impl RafxRootSignatureMetal {
     pub fn device_context(&self) -> &RafxDeviceContextMetal {
