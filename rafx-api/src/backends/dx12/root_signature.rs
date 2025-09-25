@@ -91,7 +91,7 @@ unsafe impl Sync for RafxRootSignatureDx12Inner {}
 pub struct RafxRootSignatureDx12 {
     pub(crate) inner: Arc<RafxRootSignatureDx12Inner>,
 }
-impl PartialEq for RafxRootSignatureVulkan {
+impl PartialEq for RafxRootSignatureDx12 {
     fn eq(
         &self,
         other: &Self,
