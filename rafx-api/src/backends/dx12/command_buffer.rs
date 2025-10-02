@@ -1038,10 +1038,21 @@ impl RafxCommandBufferDx12 {
         dst.pResource = ::windows::core::ManuallyDrop::new(dst_texture.dx12_resource());
         dst.Anonymous.SubresourceIndex = subresource;
 
+        let dst_x = params.copy_offset.width;
+        let dst_y = params.copy_offset.height;
+        let mut src_box = d3d12::D3D12_BOX::default();
+        src_box.right = params.buffer_extents.width;
+        src_box.bottom = params.buffer_extents.height;
+        let src_box = if src_box != d3d12::D3D12_BOX::default() {
+            Some(&src_box)
+        } else {
+            None
+        };
+
         unsafe {
             inner
                 .command_list
-                .CopyTextureRegion(&dst, 0, 0, 0, &src, None);
+                .CopyTextureRegion(&dst, dst_x, dst_y, 0, &src, src_box);
         }
 
         Ok(())

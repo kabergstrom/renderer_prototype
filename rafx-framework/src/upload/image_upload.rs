@@ -170,6 +170,7 @@ pub fn enqueue_load_image(
                         buffer_offset: layer_offsets[src_layer_index][level_index],
                         array_layer: dst_layer_index as u16,
                         mip_level: level_index as u8,
+                        ..Default::default()
                     },
                 )
                 .unwrap();

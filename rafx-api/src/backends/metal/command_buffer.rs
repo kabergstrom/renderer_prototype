@@ -1076,9 +1076,24 @@ impl RafxCommandBufferMetal {
         };
 
         let texture_def = dst_texture.texture_def();
-        let width = 1.max(texture_def.extents.width >> params.mip_level);
-        let height = 1.max(texture_def.extents.height >> params.mip_level);
-        let depth = 1.max(texture_def.extents.depth >> params.mip_level);
+        let width = if params.buffer_extents.width != 0 {
+            params.buffer_extents.width
+        } else {
+            texture_def.extents.width
+        };
+        let height = if params.buffer_extents.height != 0 {
+            params.buffer_extents.height
+        } else {
+            texture_def.extents.height
+        };
+        let depth = if params.buffer_extents.depth != 0 {
+            params.buffer_extents.depth
+        } else {
+            texture_def.extents.depth
+        };
+        let width = 1.max(width >> params.mip_level);
+        let height = 1.max(height >> params.mip_level);
+        let depth = 1.max(depth >> params.mip_level);
 
         // For a compressed format, sourceBytesPerRow is the number of bytes from the start of one row of blocks to the start of the next row of blocks.
         let format = texture_def.format;
@@ -1101,10 +1116,25 @@ impl RafxCommandBufferMetal {
             texture_alignment,
         );
 
+        let source_width = if params.buffer_extents.width != 0 {
+            params.buffer_extents.width
+        } else {
+            width
+        };
+        let source_height = if params.buffer_extents.height != 0 {
+            params.buffer_extents.height
+        } else {
+            height
+        };
+        let source_depth = if params.buffer_extents.depth != 0 {
+            params.buffer_extents.depth
+        } else {
+            depth
+        };
         let source_size = MTLSize {
-            width: width as _,
-            height: height as _,
-            depth: depth as _,
+            width: source_width as _,
+            height: source_height as _,
+            depth: source_depth as _,
         };
 
         blit_encoder.copy_from_buffer_to_texture(
@@ -1116,7 +1146,11 @@ impl RafxCommandBufferMetal {
             dst_texture.metal_texture(),
             params.array_layer as _,
             params.mip_level as _,
-            MTLOrigin { x: 0, y: 0, z: 0 },
+            MTLOrigin {
+                x: params.copy_offset.width as _,
+                y: params.copy_offset.height as _,
+                z: params.copy_offset.depth as _,
+            },
             MTLBlitOption::empty(),
         );
         Ok(())

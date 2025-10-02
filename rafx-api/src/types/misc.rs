@@ -885,6 +885,10 @@ pub struct RafxCmdCopyBufferToTextureParams {
     pub buffer_offset: u64,
     pub array_layer: u16,
     pub mip_level: u8,
+    // texel extents in source buffer
+    pub buffer_extents: RafxExtents3D,
+    // offset in texels
+    pub copy_offset: RafxExtents3D,
 }
 
 #[derive(Default, Clone)]

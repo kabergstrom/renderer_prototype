@@ -838,33 +838,63 @@ impl RafxCommandBufferVulkan {
     ) -> RafxResult<()> {
         let texture_def = dst_texture.texture_def();
 
-        let width = 1.max(texture_def.extents.width >> params.mip_level);
-        let height = 1.max(texture_def.extents.height >> params.mip_level);
-        let depth = 1.max(texture_def.extents.depth >> params.mip_level);
+        let copy_width = if params.buffer_extents.width != 0 {
+            params.buffer_extents.width
+        } else {
+            texture_def.extents.width
+        };
+        let copy_height = if params.buffer_extents.height != 0 {
+            params.buffer_extents.height
+        } else {
+            texture_def.extents.height
+        };
+        let copy_depth = if params.buffer_extents.depth != 0 {
+            params.buffer_extents.depth
+        } else {
+            texture_def.extents.depth
+        };
+        let copy_offset_x = if params.copy_offset.width != 0 {
+            params.copy_offset.width
+        } else {
+            0
+        };
+        let copy_offset_y = if params.copy_offset.height != 0 {
+            params.copy_offset.height
+        } else {
+            0
+        };
+        let width = 1.max(copy_width >> params.mip_level);
+        let height = 1.max(copy_height >> params.mip_level);
+        let depth = 1.max(copy_depth >> params.mip_level);
 
         unsafe {
+            let copy = vk::BufferImageCopy {
+                image_extent: vk::Extent3D {
+                    width,
+                    height,
+                    depth,
+                },
+                image_offset: vk::Offset3D {
+                    x: copy_offset_x as _,
+                    y: copy_offset_y as _,
+                    z: 0,
+                },
+                image_subresource: vk::ImageSubresourceLayers {
+                    aspect_mask: dst_texture.vk_aspect_mask(),
+                    mip_level: params.mip_level as u32,
+                    base_array_layer: params.array_layer as u32,
+                    layer_count: 1,
+                },
+                buffer_offset: params.buffer_offset,
+                buffer_image_height: copy_height,
+                buffer_row_length: copy_width,
+            };
             self.device_context.device().cmd_copy_buffer_to_image(
                 self.vk_command_buffer,
                 src_buffer.vk_buffer(),
                 dst_texture.vk_image(),
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[vk::BufferImageCopy {
-                    image_extent: vk::Extent3D {
-                        width,
-                        height,
-                        depth,
-                    },
-                    image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
-                    image_subresource: vk::ImageSubresourceLayers {
-                        aspect_mask: dst_texture.vk_aspect_mask(),
-                        mip_level: params.mip_level as u32,
-                        base_array_layer: params.array_layer as u32,
-                        layer_count: 1,
-                    },
-                    buffer_offset: params.buffer_offset,
-                    buffer_image_height: 0,
-                    buffer_row_length: 0,
-                }],
+                &[copy],
             );
         }
 

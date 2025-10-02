@@ -171,6 +171,7 @@ pub fn update_loop(
                     mip_level: 0,
                     array_layer: 0,
                     buffer_offset: 0,
+                    ..Default::default()
                 },
             )
             .unwrap();

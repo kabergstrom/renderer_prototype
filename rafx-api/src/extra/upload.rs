@@ -262,7 +262,7 @@ impl RafxUpload {
             let buffer = device_context.create_buffer(&RafxBufferDef {
                 size: buffer_size,
                 memory_usage: RafxMemoryUsage::CpuToGpu,
-                queue_type: RafxQueueType::Transfer,
+                queue_type: queue.queue_type(),
                 resource_type: RafxResourceType::BUFFER,
                 ..Default::default()
             })?;
