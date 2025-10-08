@@ -383,6 +383,10 @@ impl RafxUpload {
     pub fn submit(&mut self) -> RafxResult<()> {
         if self.writable {
             self.command_buffer.end()?;
+            log::trace!(
+                "uploader submitting command buffer {:?}",
+                self.command_buffer
+            );
             self.queue.submit(
                 &[&self.command_buffer],
                 &[],
@@ -409,7 +413,7 @@ impl RafxUpload {
         Ok(state)
     }
 
-    fn wait_for_idle(&self) -> RafxResult<()> {
+    pub fn wait_for_idle(&self) -> RafxResult<()> {
         self.fence.wait()
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    RafxCommandBuffer, RafxDeviceContext, RafxError, RafxFence, RafxFormat,
+    RafxCommandBuffer, RafxDeviceContext, RafxError, RafxFence, RafxFenceStatus, RafxFormat,
     RafxPresentSuccessResult, RafxQueue, RafxResult, RafxSemaphore, RafxSwapchain,
     RafxSwapchainColorSpace, RafxSwapchainDef, RafxSwapchainImage, RafxTexture,
 };
@@ -353,6 +353,16 @@ impl RafxSwapchainHelper {
         sync_frame_index: usize,
     ) -> RafxResult<()> {
         self.shared_state.as_ref().unwrap().in_flight_fences[sync_frame_index].wait()
+    }
+    pub fn is_sync_frame_idle(
+        &self,
+        sync_frame_index: usize,
+    ) -> RafxResult<bool> {
+        Ok(
+            self.shared_state.as_ref().unwrap().in_flight_fences[sync_frame_index]
+                .get_fence_status()?
+                == RafxFenceStatus::Complete,
+        )
     }
 
     pub fn acquire_next_image(

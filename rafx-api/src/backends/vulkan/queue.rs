@@ -120,8 +120,9 @@ impl RafxQueueVulkan {
         unsafe {
             let queue = self.queue.queue().lock().unwrap();
             log::trace!(
-                "submit {} command buffers to queue {:?}",
+                "submit {} command buffers {:?} to queue {:?}",
                 command_buffer_list.len(),
+                command_buffer_list,
                 *queue
             );
             self.queue
