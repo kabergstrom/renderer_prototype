@@ -1043,8 +1043,8 @@ impl RafxCommandBufferDx12 {
         let mut src_box = d3d12::D3D12_BOX::default();
         src_box.right = params.buffer_extents.width;
         src_box.bottom = params.buffer_extents.height;
-        let src_box = if src_box != d3d12::D3D12_BOX::default() {
-            Some(&src_box)
+        let src_box: Option<*const d3d12::D3D12_BOX> = if src_box != d3d12::D3D12_BOX::default() {
+            Some(std::ptr::addr_of!(src_box))
         } else {
             None
         };
