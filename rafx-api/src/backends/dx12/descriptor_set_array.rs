@@ -361,7 +361,6 @@ impl RafxDescriptorSetArrayDx12 {
 
         match descriptor.resource_type {
             RafxResourceType::SAMPLER => {
-                unimplemented!()
                 // if descriptor.has_immutable_sampler {
                 //     Err(format!(
                 //         "Tried to update sampler {:?} (set: {:?} binding: {} name: {:?} type: {:?}) but it is a static/immutable sampler",
@@ -373,38 +372,35 @@ impl RafxDescriptorSetArrayDx12 {
                 //     ))?;
                 // }
                 //
-                // let samplers = update.elements.samplers.ok_or_else(||
-                //     format!(
-                //         "Tried to update binding {:?} (set: {:?} binding: {} name: {:?} type: {:?}) but the samplers element list was None",
-                //         update.descriptor_key,
-                //         descriptor.set_index,
-                //         descriptor.binding,
-                //         descriptor.name,
-                //         descriptor.resource_type,
-                //     )
-                // )?;
-                // let begin_index =
-                //     (descriptor_first_update_data + update.dst_element_offset) as usize;
-                // assert!(begin_index + samplers.len() <= update_data_count);
-                //
-                // // Modify the update data
-                // let mut next_index = begin_index;
-                // for sampler in samplers {
-                //     let image_info = &mut self.update_data.image_infos[next_index];
-                //     next_index += 1;
-                //
-                //     image_info.sampler = sampler.vk_sampler().unwrap().vk_sampler();
-                // }
-                //
-                // // Queue a descriptor write
-                // self.pending_writes.push(
-                //     write_descriptor_builder
-                //         .image_info(&self.update_data.image_infos[begin_index..next_index])
-                //         .build(),
-                // );
+                let samplers = update.elements.samplers.ok_or_else(||
+                    format!(
+                        "Tried to update binding {:?} (set: {:?} binding: {} name: {:?} type: {:?}) but the samplers element list was None",
+                        update.descriptor_key,
+                        descriptor.set_index,
+                        descriptor.binding,
+                        descriptor.name,
+                        descriptor.resource_type,
+                    )
+                )?;
+                let begin_index =
+                    (descriptor_first_update_data + update.dst_element_offset) as usize;
+                assert!(begin_index + samplers.len() <= update_data_count);
+                let mut next_index = table_info.first_id.0 + begin_index as u32;
+                for sampler in samplers {
+                    let descriptor_id = Dx12DescriptorId(next_index);
+                    next_index += 1;
+                    let src_id = sampler.dx12_sampler().unwrap().dx12_sampler_descriptor();
+                    // Modify the update data
+                    copy_descriptor_handle(
+                        device_context.d3d12_device(),
+                        &device_context.inner.heaps.sampler_heap,
+                        src_id,
+                        &device_context.inner.heaps.gpu_sampler_heap,
+                        descriptor_id,
+                    );
+                }
             }
             RafxResourceType::COMBINED_IMAGE_SAMPLER => {
-                unimplemented!()
                 // if !descriptor.has_immutable_sampler {
                 //     Err(format!(
                 //         "Tried to update binding {:?} (set: {:?} binding: {} name: {:?} type: {:?}) but the sampler is NOT immutable. This is not currently supported.",
@@ -415,6 +411,7 @@ impl RafxDescriptorSetArrayDx12 {
                 //         descriptor.resource_type
                 //     ))?;
                 // }
+                unimplemented!()
                 //
                 // let textures = update.elements.textures.ok_or_else(||
                 //     format!(

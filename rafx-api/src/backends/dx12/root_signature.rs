@@ -531,7 +531,7 @@ impl RafxRootSignatureDx12 {
                 let mut shader_stages = RafxShaderStageFlags::empty();
                 // This will update descriptor's update_data_offset_in_set
                 let total_descriptor_count = add_descriptor_table(
-                    &layout.cbv_srv_uav_table,
+                    &layout.sampler_table,
                     &mut descriptors,
                     &mut sampler_ranges[layout_index],
                     &mut shader_stages,

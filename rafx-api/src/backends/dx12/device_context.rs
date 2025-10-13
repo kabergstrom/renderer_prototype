@@ -170,6 +170,12 @@ fn create_device(
             info_queue.SetBreakOnSeverity(d3d12::D3D12_MESSAGE_SEVERITY_ERROR, true)?;
             //info_queue.SetBreakOnSeverity(d3d12::D3D12_MESSAGE_SEVERITY_WARNING, true)?;
             info_queue.SetBreakOnSeverity(d3d12::D3D12_MESSAGE_SEVERITY_CORRUPTION, true)?;
+            // info_queue.RegisterMessageCallback(
+            //     Some(debug_message_callback),
+            //     d3d12::D3D12_MESSAGE_CALLBACK_FLAG_NONE,
+            //     std::ptr::null_mut(),
+            //     std::ptr::null_mut(),
+            // )?;
         }
 
         // Set what degree of GBV we want to use.
@@ -601,3 +607,17 @@ impl RafxDeviceContextDx12 {
         //None
     }
 }
+
+// unsafe extern "system" fn debug_message_callback(
+//     category: d3d12::D3D12_MESSAGE_CATEGORY,
+//     severity: d3d12::D3D12_MESSAGE_SEVERITY,
+//     id: d3d12::D3D12_MESSAGE_ID,
+//     pdescription: windows::core::PCSTR,
+//     pcontext: *mut core::ffi::c_void,
+// ) {
+//     let s = std::ffi::CStr::from_ptr(pdescription.0.cast());
+//     let s = s.to_str().unwrap();
+//     if severity == d3d12::D3D12_MESSAGE_SEVERITY_INFO {
+//         log::info!("D3D12: {}", s);
+//     }
+// }

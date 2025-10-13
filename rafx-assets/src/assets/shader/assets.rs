@@ -51,13 +51,11 @@ fn build_reflection_data_map(
     api_type: RafxApiType,
 ) {
     if let Some(reflection_data) = shader_package.reflection(api_type) {
-        for entry_point in reflection_data {
-            let old = reflection_data_lookup[api_type as usize].insert(
-                entry_point.rafx_api_reflection.entry_point_name.clone(),
-                entry_point.clone(),
-            );
-            assert!(old.is_none());
-        }
+        let old = reflection_data_lookup[api_type as usize].insert(
+            reflection_data.rafx_api_reflection.entry_point_name.clone(),
+            reflection_data.clone(),
+        );
+        assert!(old.is_none());
     }
 }
 
