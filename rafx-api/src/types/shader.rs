@@ -5,6 +5,20 @@ use crate::{RafxApiType, RafxReflectedEntryPoint};
 #[cfg(feature = "serde-support")]
 use serde::{Deserialize, Serialize};
 
+/// A shader package and its hash. This allows storing the package with a pre-generated hash to
+/// file. The shader package is immutable to ensure the hash is never stale.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct RafxPipelinePackage {
+    pub shaders: Vec<RafxHashedShaderPackage>,
+}
+
+impl RafxPipelinePackage {
+    pub fn new(shaders: Vec<RafxHashedShaderPackage>) -> Self {
+        Self { shaders }
+    }
+}
+
 /// GL ES 2.0-specific shader package. Can be used to create a RafxShaderModuleDef, which in turn is
 /// used to initialize a shader module GPU object
 ///
@@ -85,11 +99,11 @@ pub struct RafxShaderPackage {
     pub metal: Option<RafxShaderPackageMetal>,
     pub vk: Option<RafxShaderPackageVulkan>,
 
-    pub vk_reflection: Option<Vec<RafxReflectedEntryPoint>>,
-    pub dx12_reflection: Option<Vec<RafxReflectedEntryPoint>>,
-    pub metal_reflection: Option<Vec<RafxReflectedEntryPoint>>,
-    pub gles2_reflection: Option<Vec<RafxReflectedEntryPoint>>,
-    pub gles3_reflection: Option<Vec<RafxReflectedEntryPoint>>,
+    pub vk_reflection: Option<RafxReflectedEntryPoint>,
+    pub dx12_reflection: Option<RafxReflectedEntryPoint>,
+    pub metal_reflection: Option<RafxReflectedEntryPoint>,
+    pub gles2_reflection: Option<RafxReflectedEntryPoint>,
+    pub gles3_reflection: Option<RafxReflectedEntryPoint>,
 
     pub debug_name: Option<String>,
 }
@@ -138,7 +152,7 @@ impl RafxShaderPackage {
     pub fn reflection(
         &self,
         api_type: RafxApiType,
-    ) -> Option<&Vec<RafxReflectedEntryPoint>> {
+    ) -> Option<&RafxReflectedEntryPoint> {
         match api_type {
             RafxApiType::Vk => self.vk_reflection.as_ref(),
             RafxApiType::Dx12 => self.dx12_reflection.as_ref(),
@@ -147,19 +161,6 @@ impl RafxShaderPackage {
             RafxApiType::Gles3 => self.gles3_reflection.as_ref(),
             RafxApiType::Empty => None,
         }
-    }
-
-    pub fn find_entry_point(
-        &self,
-        api_type: RafxApiType,
-        entry_point_name: &str,
-    ) -> Option<&RafxReflectedEntryPoint> {
-        self.reflection(api_type)
-            .map(|x| {
-                x.iter()
-                    .find(|&x| x.rafx_api_reflection.entry_point_name == entry_point_name)
-            })
-            .flatten()
     }
 
     /// Create a shader module def for use with a GL RafxDevice. Returns none if the package does

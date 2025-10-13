@@ -291,15 +291,15 @@ impl RafxPipelineReflection {
             for resource in &stage.reflection.resources {
                 // The provided resource MAY (but does not need to) have the shader stage flag set.
                 // (Leaving it default empty is fine). It will automatically be set here.
-                if !(resource.used_in_shader_stages - stage.reflection.shader_stage).is_empty() {
-                    let message = format!(
-                        "A resource in shader stage {:?} has other stages {:?} set",
-                        stage.reflection.shader_stage,
-                        resource.used_in_shader_stages - stage.reflection.shader_stage
-                    );
-                    log::error!("{}", message);
-                    Err(message)?;
-                }
+                // if !(resource.used_in_shader_stages - stage.reflection.shader_stage).is_empty() {
+                //     let message = format!(
+                //         "A resource in shader stage {:?} has other stages {:?} set",
+                //         stage.reflection.shader_stage,
+                //         resource.used_in_shader_stages - stage.reflection.shader_stage
+                //     );
+                //     log::error!("{}", message);
+                //     Err(message)?;
+                // }
 
                 let mut resource = resource.clone();
                 resource.used_in_shader_stages |= stage.reflection.shader_stage;

@@ -7,23 +7,23 @@ use std::sync::Arc;
 
 use rafx_api::RafxSamplerDef;
 
-#[derive(Default, Deserialize, Debug)]
+#[derive(Default, Deserialize, Debug, Clone)]
 #[serde(rename = "export")]
 pub(crate) struct ExportAnnotation(/*pub(crate) String*/);
 
-#[derive(Default, Deserialize, Debug)]
+#[derive(Default, Deserialize, Debug, Clone)]
 #[serde(rename = "internal_buffer")]
 pub(crate) struct UseInternalBufferAnnotation(/*pub(crate) u32*/);
 
-#[derive(Default, Deserialize, Debug)]
+#[derive(Default, Deserialize, Debug, Clone)]
 #[serde(rename = "immutable_samplers")]
 pub(crate) struct ImmutableSamplersAnnotation(pub(crate) Vec<RafxSamplerDef>);
 
-#[derive(Default, Deserialize, Debug)]
+#[derive(Default, Deserialize, Debug, Clone)]
 #[serde(rename = "slot_name")]
 pub(crate) struct SlotNameAnnotation(pub(crate) String);
 
-#[derive(Default, Deserialize, Debug)]
+#[derive(Default, Deserialize, Debug, Clone)]
 #[serde(rename = "semantic")]
 pub(crate) struct SemanticAnnotation(pub(crate) String);
 
@@ -36,7 +36,7 @@ fn parse_ron_or_default<'de, T: Default + Deserialize<'de>>(data: &'de str) -> R
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub(crate) struct StructAnnotations {
     pub(crate) export: Option<ExportAnnotation>,
 }
@@ -74,7 +74,7 @@ impl StructAnnotations {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub(crate) struct BindingAnnotations {
     pub(crate) export: Option<ExportAnnotation>,
     pub(crate) use_internal_buffer: Option<UseInternalBufferAnnotation>,
@@ -137,7 +137,7 @@ pub(crate) struct ParseFieldResult {
     pub(crate) array_sizes: Vec<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ParseStructResult {
     pub(crate) type_name: String,
     pub(crate) fields: Arc<Vec<ParseFieldResult>>,
@@ -305,7 +305,7 @@ pub(crate) struct LayoutPart {
     pub(crate) value: Option<String>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum BindingType {
     Uniform,
     Buffer,
@@ -313,7 +313,7 @@ pub(crate) enum BindingType {
     Out,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub(crate) struct ParsedLayoutParts {
     pub(crate) set: Option<usize>,
     pub(crate) binding: Option<usize>,
@@ -389,7 +389,7 @@ pub(crate) enum ParseBindingOrGroupSizeResult {
     GroupSize(ParseGroupSizeResult),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ParseBindingResult {
     pub(crate) layout_parts: ParsedLayoutParts,
     pub(crate) binding_type: BindingType,
@@ -399,7 +399,7 @@ pub(crate) struct ParseBindingResult {
     pub(crate) array_sizes: Vec<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ParseGroupSizeResult {
     pub(crate) x: u32,
     pub(crate) y: u32,
@@ -662,17 +662,19 @@ fn try_parse_const(code: &[char]) -> Result<Option<()>, String> {
 //
 // }
 
+#[derive(Debug, Clone)]
 pub(crate) struct ParsedStructWithAnnotations {
     pub(crate) parsed: ParseStructResult,
     pub(crate) annotations: StructAnnotations,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ParsedBindingWithAnnotations {
     pub(crate) parsed: ParseBindingResult,
     pub(crate) annotations: BindingAnnotations,
 }
 
+#[derive(Clone)]
 pub(crate) struct ParseDeclarationsResult {
     pub(crate) structs: Vec<ParsedStructWithAnnotations>,
     pub(crate) bindings: Vec<ParsedBindingWithAnnotations>,

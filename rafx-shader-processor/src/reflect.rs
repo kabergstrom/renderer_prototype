@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::shader_types::{
-    element_count, generate_struct, MemoryLayout, TypeAlignmentInfo, UserType,
+    self, element_count, generate_struct, MemoryLayout, TypeAlignmentInfo, UserType,
 };
+use crate::CompileResult;
 use fnv::FnvHashMap;
 use rafx_api::{
     RafxAddressMode, RafxCompareOp, RafxFilterType, RafxGlUniformMember, RafxMipMapMode,
@@ -737,7 +738,7 @@ pub(crate) fn msl_const_samplers(
 
                         let sampler_data = msl_create_sampler_data(&immutable_sampler)?;
 
-                        if let Some(old) = immutable_samplers.get(&location) {
+                        if let Some(_old) = immutable_samplers.get(&location) {
                             // if *old != sampler_data {
                             //     Err(format!("Samplers in different entry points but same location ({:?}) do not match: \n{:#?}\n{:#?}", location, old, sampler_data))?;
                             // }
@@ -843,7 +844,7 @@ pub struct MslAssignment {
     pub bind_target: spirv_cross2::compile::msl::BindTarget,
 }
 
-pub struct ShaderProcessorRefectionData {
+pub struct ShaderProcessorReflectionData {
     pub reflection: Vec<RafxReflectedEntryPoint>,
     pub hlsl_register_assignments: Vec<HlslAssignment>,
     pub hlsl_vertex_attribute_remaps: Vec<RafxReflectedVertexInput>,
@@ -852,7 +853,7 @@ pub struct ShaderProcessorRefectionData {
         FnvHashMap<spirv_cross2::compile::msl::ResourceBinding, MslConstSampler>,
 }
 
-impl ShaderProcessorRefectionData {
+impl ShaderProcessorReflectionData {
     // GL ES 2.0 attaches sampler state to textures. So every texture must be associated with a
     // single sampler. This function is called when cross-compiling to GL ES 2.0 to set
     // gl_sampler_name on all texture resources.
@@ -888,38 +889,48 @@ impl ShaderProcessorRefectionData {
     }
 }
 
-pub(crate) fn reflect_data(
+pub(crate) fn reflect_data<'a>(
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
-    user_types: &FnvHashMap<String, UserType>,
-    artifact: &spirv_cross2::compile::CompiledArtifact<spirv_cross2::targets::Glsl>,
-    declarations: &super::parse_declarations::ParseDeclarationsResult,
+    compile_results: impl IntoIterator<Item = &'a CompileResult>,
     require_semantics: bool,
-) -> RafxResult<ShaderProcessorRefectionData> {
+) -> RafxResult<ShaderProcessorReflectionData> {
     let mut entry_point_data = Vec::new();
-    for entry_point in artifact
-        .entry_points()
-        .map_err(|_x| "could not get entry point from reflection data")?
-    {
-        let stage_flags = map_shader_stage_flags(entry_point.execution_model)?;
+    for compile in compile_results {
+        for entry_point in compile
+            .artifact
+            .entry_points()
+            .map_err(|_x| "could not get entry point from reflection data")?
+        {
+            let stage_flags = map_shader_stage_flags(entry_point.execution_model)?;
 
-        let shader_resources = artifact
-            .shader_resources()
-            .map_err(|_x| "could not get resources from reflection data")?;
+            let shader_resources = compile
+                .artifact
+                .shader_resources()
+                .map_err(|_x| "could not get resources from reflection data")?;
 
-        let bindings = get_all_reflected_bindings(
-            builtin_types,
-            user_types,
-            &shader_resources,
-            artifact,
-            declarations,
-            stage_flags,
-        )?;
+            let user_types = shader_types::create_user_type_lookup(&compile.parsed_declarations)?;
+            let bindings = get_all_reflected_bindings(
+                builtin_types,
+                &user_types,
+                &shader_resources,
+                &compile.artifact,
+                &compile.parsed_declarations,
+                stage_flags,
+            )?;
 
-        entry_point_data.push((entry_point, bindings, stage_flags, shader_resources));
+            entry_point_data.push((
+                entry_point,
+                bindings,
+                stage_flags,
+                shader_resources,
+                &compile.artifact,
+                &compile.parsed_declarations,
+            ));
+        }
     }
     let mut merged_resources = BTreeMap::new();
 
-    for (_, bindings, _, _) in &entry_point_data {
+    for (_, bindings, _, _, _, _) in &entry_point_data {
         for binding in bindings {
             merged_resources
                 .entry((binding.resource.set_index, binding.resource.binding))
@@ -963,14 +974,12 @@ pub(crate) fn reflect_data(
         {
             let reg = next_cbv_register;
             next_cbv_register += element_count;
-            println!("uniform buffer: {:?}", binding.resource);
             reg
         } else if binding.resource.resource_type.intersects(
             RafxResourceType::TEXTURE | RafxResourceType::BUFFER | RafxResourceType::TEXEL_BUFFER,
         ) {
             let reg = next_srv_register;
             next_srv_register += element_count;
-            println!("srv: {:?}", binding.resource);
             reg
         } else if binding.resource.resource_type.intersects(
             RafxResourceType::TEXTURE_READ_WRITE
@@ -979,7 +988,6 @@ pub(crate) fn reflect_data(
         ) {
             let reg = next_uav_register;
             next_uav_register += element_count;
-            println!("uav: {:?}", binding.resource);
             reg
         } else if binding
             .resource
@@ -988,12 +996,10 @@ pub(crate) fn reflect_data(
         {
             let reg = next_sampler_register;
             next_sampler_register += element_count;
-            println!("sampler: {:?}", binding.resource);
             reg
         } else {
             // Should not happen for descriptor-bound resources.
             // Default to 0 if it's an unknown type to avoid a compile error.
-            println!("unknown: {:?}", binding.resource);
             0
         };
 
@@ -1007,7 +1013,9 @@ pub(crate) fn reflect_data(
 
     let mut reflected_entry_points = Vec::new();
 
-    for (entry_point, mut dsc_bindings, stage_flags, shader_resources) in entry_point_data {
+    for (entry_point, mut dsc_bindings, stage_flags, shader_resources, artifact, declarations) in
+        entry_point_data
+    {
         // Update this stage's bindings with the globally assigned register info
         for binding in &mut dsc_bindings {
             if let Some(final_resource) =
@@ -1148,7 +1156,7 @@ pub(crate) fn reflect_data(
         }
     }
 
-    Ok(ShaderProcessorRefectionData {
+    Ok(ShaderProcessorReflectionData {
         reflection: reflected_entry_points,
         hlsl_register_assignments,
         hlsl_vertex_attribute_remaps,
@@ -1157,7 +1165,7 @@ pub(crate) fn reflect_data(
     })
 }
 
-fn map_shader_stage_flags(
+pub fn map_shader_stage_flags(
     shader_stage: spirv_cross2::spirv::ExecutionModel
 ) -> RafxResult<RafxShaderStageFlags> {
     Ok(match shader_stage {

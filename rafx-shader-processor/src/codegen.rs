@@ -1,7 +1,11 @@
 use crate::parse_declarations::{
     BindingType, ParseDeclarationsResult, ParsedBindingWithAnnotations,
 };
-use crate::shader_types::*;
+use crate::reflect::ShaderProcessorReflectionData;
+use crate::{
+    shader_types::{self, *},
+    CompileResult,
+};
 use fnv::{FnvHashMap, FnvHashSet};
 use rafx_api::{RafxReflectedEntryPoint, RafxResourceType};
 use std::collections::BTreeMap;
@@ -37,76 +41,109 @@ fn determine_memory_layout(binding_struct_type: StructBindingType) -> MemoryLayo
 }
 
 pub(crate) fn generate_rust_code(
-    builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
-    user_types: &mut FnvHashMap<String, UserType>,
-    parsed_declarations: &ParseDeclarationsResult,
-    reflected_entry_point: &RafxReflectedEntryPoint,
+    pipeline_name: String,
+    compile_results: &[CompileResult],
+    reflection_data: &ShaderProcessorReflectionData,
     for_rafx_framework_crate: bool,
 ) -> Result<String, String> {
-    //
-    // Any struct that's explicitly exported will produce all layouts
-    //
-    for s in &parsed_declarations.structs {
-        if s.annotations.export.is_some() {
-            recursive_modify_user_type(user_types, &s.parsed.type_name, &|udt| {
-                let already_marked = udt.export_uniform_layout
-                    && udt.export_push_constant_layout
-                    && udt.export_buffer_layout;
-                udt.export_uniform_layout = true;
-                udt.export_push_constant_layout = true;
-                udt.export_buffer_layout = true;
-                !already_marked
-            });
+    // builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
+    let mut all_structs = FnvHashMap::default();
+    for s in compile_results
+        .iter()
+        .flat_map(|c| &c.parsed_declarations.structs)
+    {
+        let _existing_struct = all_structs
+            .entry(s.parsed.type_name.clone())
+            .or_insert_with(|| s.clone());
+    }
+    let mut all_bindings = FnvHashMap::default();
+    for b in compile_results
+        .iter()
+        .flat_map(|c| &c.parsed_declarations.bindings)
+    {
+        let existing_binding = all_bindings
+            .entry(b.parsed.instance_name.clone())
+            .or_insert_with(|| b.clone());
+
+        match existing_binding.parsed.binding_type {
+            BindingType::Uniform | BindingType::Buffer => {
+                if existing_binding.parsed.layout_parts != b.parsed.layout_parts {
+                    Err(format!("Binding {} in pipeline {} has different layout parts in different files: {:?} vs {:?}", existing_binding.parsed.instance_name, pipeline_name, existing_binding.parsed.layout_parts, b.parsed.layout_parts ))?;
+                }
+            }
+            _ => {}
         }
     }
 
-    //
-    // Bindings can either be std140 (uniform) or std430 (push constant/buffer). Depending on the
-    // binding, enable export for just the type that we need
-    //
-    for b in &parsed_declarations.bindings {
-        if b.annotations.export.is_some() {
-            match determine_binding_type(b)? {
-                StructBindingType::PushConstant => {
-                    recursive_modify_user_type(user_types, &b.parsed.type_name, &|udt| {
-                        let already_marked = udt.export_push_constant_layout;
-                        udt.export_push_constant_layout = true;
-                        !already_marked
-                    });
-                }
-                StructBindingType::Uniform => {
-                    recursive_modify_user_type(user_types, &b.parsed.type_name, &|udt| {
-                        let already_marked = udt.export_uniform_layout;
-                        udt.export_uniform_layout = true;
-                        !already_marked
-                    });
-                }
-                StructBindingType::Buffer => {
-                    recursive_modify_user_type(user_types, &b.parsed.type_name, &|udt| {
-                        let already_marked = udt.export_buffer_layout;
-                        udt.export_buffer_layout = true;
-                        !already_marked
-                    });
+    let first_group_size = compile_results
+        .iter()
+        .filter_map(|c| c.parsed_declarations.group_size.clone())
+        .next();
+    let builtin_types = shader_types::create_builtin_type_lookup();
+    let declarations = ParseDeclarationsResult {
+        structs: all_structs.into_values().collect(),
+        bindings: all_bindings.into_values().collect(),
+        group_size: first_group_size,
+    };
+    let mut user_types = shader_types::create_user_type_lookup(&declarations)?;
+    // parsed_declarations: &ParseDeclarationsResult,
+
+    for compile_result in compile_results {
+        // Any struct that's explicitly exported will produce all layouts
+        for s in &compile_result.parsed_declarations.structs {
+            if s.annotations.export.is_some() {
+                recursive_modify_user_type(&mut user_types, &s.parsed.type_name, &|udt| {
+                    let already_marked = udt.export_uniform_layout
+                        && udt.export_push_constant_layout
+                        && udt.export_buffer_layout;
+                    udt.export_uniform_layout = true;
+                    udt.export_push_constant_layout = true;
+                    udt.export_buffer_layout = true;
+                    !already_marked
+                });
+            }
+        }
+
+        //
+        // Bindings can either be std140 (uniform) or std430 (push constant/buffer). Depending on the
+        // binding, enable export for just the type that we need
+        //
+        for b in &compile_result.parsed_declarations.bindings {
+            if b.annotations.export.is_some() {
+                match determine_binding_type(b)? {
+                    StructBindingType::PushConstant => {
+                        recursive_modify_user_type(&mut user_types, &b.parsed.type_name, &|udt| {
+                            let already_marked = udt.export_push_constant_layout;
+                            udt.export_push_constant_layout = true;
+                            !already_marked
+                        });
+                    }
+                    StructBindingType::Uniform => {
+                        recursive_modify_user_type(&mut user_types, &b.parsed.type_name, &|udt| {
+                            let already_marked = udt.export_uniform_layout;
+                            udt.export_uniform_layout = true;
+                            !already_marked
+                        });
+                    }
+                    StructBindingType::Buffer => {
+                        recursive_modify_user_type(&mut user_types, &b.parsed.type_name, &|udt| {
+                            let already_marked = udt.export_buffer_layout;
+                            udt.export_buffer_layout = true;
+                            !already_marked
+                        });
+                    }
                 }
             }
         }
     }
 
-    generate_rust_file(
-        &parsed_declarations,
-        &builtin_types,
-        &user_types,
-        reflected_entry_point,
-        for_rafx_framework_crate,
-    )
+    generate_rust_file(&declarations, &builtin_types, &user_types)
 }
 
 fn generate_rust_file(
     parsed_declarations: &ParseDeclarationsResult,
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     user_types: &FnvHashMap<String, UserType>,
-    reflected_entry_point: &RafxReflectedEntryPoint,
-    for_rafx_framework_crate: bool,
 ) -> Result<String, String> {
     let mut rust_code = Vec::<String>::default();
 
