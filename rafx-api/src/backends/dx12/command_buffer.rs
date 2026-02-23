@@ -1040,10 +1040,12 @@ impl RafxCommandBufferDx12 {
 
         let dst_x = params.copy_offset.width;
         let dst_y = params.copy_offset.height;
+        let has_extents = params.buffer_extents.width > 0 || params.buffer_extents.height > 0 || params.buffer_extents.depth > 0;
         let mut src_box = d3d12::D3D12_BOX::default();
         src_box.right = params.buffer_extents.width;
         src_box.bottom = params.buffer_extents.height;
-        let src_box: Option<*const d3d12::D3D12_BOX> = if src_box != d3d12::D3D12_BOX::default() {
+        src_box.back = if params.buffer_extents.depth > 0 { params.buffer_extents.depth } else { 1 };
+        let src_box: Option<*const d3d12::D3D12_BOX> = if has_extents {
             Some(std::ptr::addr_of!(src_box))
         } else {
             None

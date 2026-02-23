@@ -181,7 +181,7 @@ impl RafxDescriptorSetArrayDx12 {
         }
 
         if let Some(sampler_table_info) = &self.sampler_table_info {
-            handle.cbv_srv_uav_descriptor_id = Some(Dx12DescriptorId(
+            handle.sampler_descriptor_id = Some(Dx12DescriptorId(
                 sampler_table_info.first_id.0 + index * sampler_table_info.stride,
             ));
             handle.sampler_root_index = sampler_table_info.root_index;
@@ -740,8 +740,62 @@ impl RafxDescriptorSetArrayDx12 {
                     next_index += 1;
 
                     if let Some(buffer_offset_sizes) = &update.elements.buffer_offset_sizes {
-                        //TODO: Support this?
-                        unimplemented!();
+                        let offset_size = &buffer_offset_sizes[buffer_index];
+                        let dx12_buf = buffer.dx12_buffer().unwrap();
+
+                        // If offset is 0 and we have a pre-built SRV, just copy it
+                        if offset_size.byte_offset == 0 {
+                            if let Some(src_id) = dx12_buf.srv() {
+                                copy_descriptor_handle(
+                                    device_context.d3d12_device(),
+                                    &device_context.inner.heaps.cbv_srv_uav_heap,
+                                    src_id,
+                                    &device_context.inner.heaps.gpu_cbv_srv_uav_heap,
+                                    descriptor_id,
+                                );
+                                continue;
+                            }
+                        }
+
+                        // Create an inline SRV for a sub-range of the buffer
+                        let buffer_def = buffer.buffer_def();
+                        let mut desc = super::d3d12::D3D12_SHADER_RESOURCE_VIEW_DESC::default();
+                        desc.Format = buffer_def.format.into();
+                        desc.ViewDimension = super::d3d12::D3D12_SRV_DIMENSION_BUFFER;
+                        desc.Shader4ComponentMapping = super::d3d12::D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+                        let element_stride = if buffer_def.elements.element_stride > 0 {
+                            buffer_def.elements.element_stride as u64
+                        } else {
+                            4
+                        };
+                        let effective_size = if offset_size.size > 0 {
+                            offset_size.size
+                        } else {
+                            buffer_def.size - offset_size.byte_offset
+                        };
+
+                        desc.Anonymous.Buffer.FirstElement = offset_size.byte_offset / element_stride;
+                        desc.Anonymous.Buffer.NumElements = (effective_size / element_stride) as u32;
+                        desc.Anonymous.Buffer.StructureByteStride = element_stride as u32;
+                        desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_SRV_FLAG_NONE;
+
+                        if desc.Format != super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
+                            desc.Anonymous.Buffer.StructureByteStride = 0;
+                        }
+
+                        let handle = device_context
+                            .inner
+                            .heaps
+                            .gpu_cbv_srv_uav_heap
+                            .id_to_cpu_handle(descriptor_id);
+                        unsafe {
+                            device_context.d3d12_device().CreateShaderResourceView(
+                                dx12_buf.dx12_resource(),
+                                Some(&desc),
+                                handle,
+                            );
+                        }
                     } else {
                         let src_id = buffer.dx12_buffer().unwrap().srv().unwrap();
                         //println!("Copy descriptor handle {:?} to {:?}", src_id, descriptor_id);
@@ -778,8 +832,63 @@ impl RafxDescriptorSetArrayDx12 {
                     next_index += 1;
 
                     if let Some(buffer_offset_sizes) = &update.elements.buffer_offset_sizes {
-                        //TODO: Support this?
-                        unimplemented!();
+                        let offset_size = &buffer_offset_sizes[buffer_index];
+                        let dx12_buf = buffer.dx12_buffer().unwrap();
+
+                        // If offset is 0 and we have a pre-built UAV, just copy it
+                        if offset_size.byte_offset == 0 {
+                            if let Some(src_id) = dx12_buf.uav() {
+                                copy_descriptor_handle(
+                                    device_context.d3d12_device(),
+                                    &device_context.inner.heaps.cbv_srv_uav_heap,
+                                    src_id,
+                                    &device_context.inner.heaps.gpu_cbv_srv_uav_heap,
+                                    descriptor_id,
+                                );
+                                continue;
+                            }
+                        }
+
+                        // Create an inline UAV for a sub-range of the buffer
+                        let buffer_def = buffer.buffer_def();
+                        let mut desc = super::d3d12::D3D12_UNORDERED_ACCESS_VIEW_DESC::default();
+                        desc.Format = buffer_def.format.into();
+                        desc.ViewDimension = super::d3d12::D3D12_UAV_DIMENSION_BUFFER;
+
+                        let element_stride = if buffer_def.elements.element_stride > 0 {
+                            buffer_def.elements.element_stride as u64
+                        } else {
+                            4
+                        };
+                        let effective_size = if offset_size.size > 0 {
+                            offset_size.size
+                        } else {
+                            buffer_def.size - offset_size.byte_offset
+                        };
+
+                        desc.Anonymous.Buffer.FirstElement = offset_size.byte_offset / element_stride;
+                        desc.Anonymous.Buffer.NumElements = (effective_size / element_stride) as u32;
+                        desc.Anonymous.Buffer.StructureByteStride = element_stride as u32;
+                        desc.Anonymous.Buffer.CounterOffsetInBytes = 0;
+                        desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_UAV_FLAG_NONE;
+
+                        if desc.Format != super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
+                            desc.Anonymous.Buffer.StructureByteStride = 0;
+                        }
+
+                        let handle = device_context
+                            .inner
+                            .heaps
+                            .gpu_cbv_srv_uav_heap
+                            .id_to_cpu_handle(descriptor_id);
+                        unsafe {
+                            device_context.d3d12_device().CreateUnorderedAccessView(
+                                dx12_buf.dx12_resource(),
+                                None,
+                                Some(&desc),
+                                handle,
+                            );
+                        }
                     } else {
                         //println!("BIND UAV BUFFER DEF {:?}", buffer.buffer_def());
                         let src_id = buffer.dx12_buffer().unwrap().uav().unwrap();

@@ -109,7 +109,7 @@ fn create_heap(
         heap_desc.Flags |= d3d12::D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     }
 
-    println!("{:?}", heap_desc);
+    log::trace!("{:?}", heap_desc);
 
     let heap: ID3D12DescriptorHeap;
     let cpu_first_handle;
@@ -118,7 +118,7 @@ fn create_heap(
     unsafe {
         heap = device.CreateDescriptorHeap(&heap_desc)?;
         cpu_first_handle = heap.GetCPUDescriptorHandleForHeapStart();
-        println!("start_cpu_handle {}", cpu_first_handle.ptr);
+        log::trace!("start_cpu_handle {}", cpu_first_handle.ptr);
 
         gpu_first_handle = if shader_visible {
             Some(heap.GetGPUDescriptorHandleForHeapStart())
@@ -190,7 +190,7 @@ impl Dx12DescriptorHeapInner {
         let old_size = self.descriptor_count;
         let new_size = next_power_of_two(old_size + minimum_required_descriptors);
 
-        println!("GROWING HEAP {} -> {}", old_size, new_size);
+        log::warn!("descriptor heap growing {} -> {}", old_size, new_size);
         let shader_visible = self.gpu_first_handle.is_some();
 
         // Copy into the new heap

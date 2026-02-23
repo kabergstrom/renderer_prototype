@@ -85,7 +85,7 @@ impl RafxSwapchainDx12 {
 
         let hwnd = match raw_window_handle.raw_window_handle() {
             RawWindowHandle::Win32(hwnd) => {
-                println!("HWND: {:?}", hwnd);
+                log::trace!("HWND: {:?}", hwnd);
                 windows::Win32::Foundation::HWND(hwnd.hwnd as isize)
             }
             _ => return Err("Cannot create RafxSurfaceDx12 on this operating system".into()),

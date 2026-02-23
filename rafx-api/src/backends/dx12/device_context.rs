@@ -117,6 +117,7 @@ fn create_device(
     dxgi::IDXGIFactory4,
     dxgi::IDXGIAdapter1,
     d3d12::ID3D12Device,
+    Option<d3d12::ID3D12InfoQueue>,
 )> {
     if dx12_api_def.validation_mode != RafxValidationMode::Disabled {
         unsafe {
@@ -164,18 +165,20 @@ fn create_device(
         "Could not create D3D device".to_string(),
     ))?;
 
+    let mut info_queue_out = None;
     if dx12_api_def.validation_mode != RafxValidationMode::Disabled {
         let info_queue = d3d12_device.cast::<d3d12::ID3D12InfoQueue>().unwrap();
         unsafe {
-            info_queue.SetBreakOnSeverity(d3d12::D3D12_MESSAGE_SEVERITY_ERROR, true)?;
+            // Don't break on ERROR — we poll the info queue ourselves via
+            // poll_debug_messages() so the message is visible on stderr even
+            // without a debugger.  Break-on-corruption is kept since those are
+            // unrecoverable.
+            info_queue.SetBreakOnSeverity(d3d12::D3D12_MESSAGE_SEVERITY_ERROR, false)?;
             //info_queue.SetBreakOnSeverity(d3d12::D3D12_MESSAGE_SEVERITY_WARNING, true)?;
             info_queue.SetBreakOnSeverity(d3d12::D3D12_MESSAGE_SEVERITY_CORRUPTION, true)?;
-            // info_queue.RegisterMessageCallback(
-            //     Some(debug_message_callback),
-            //     d3d12::D3D12_MESSAGE_CALLBACK_FLAG_NONE,
-            //     std::ptr::null_mut(),
-            //     std::ptr::null_mut(),
-            // )?;
+            // Note: SetMuteDebugOutput(true) would prevent messages from
+            // reaching OutputDebugString, but it also prevents them from being
+            // stored in the queue. Leave it unmuted so poll_debug_messages() works.
         }
 
         // Set what degree of GBV we want to use.
@@ -204,9 +207,10 @@ fn create_device(
                 )?;
             }
         }
+        info_queue_out = Some(info_queue);
     }
 
-    Ok((dxgi_factory, dxgi_adapter, d3d12_device))
+    Ok((dxgi_factory, dxgi_adapter, d3d12_device, info_queue_out))
 }
 
 use crate::dx12::mipmap_resources::Dx12MipmapResources;
@@ -227,6 +231,8 @@ pub struct RafxDeviceContextDx12Inner {
     d3d12_device: d3d12::ID3D12Device,
     dxgi_adapter: dxgi::IDXGIAdapter1,
     dxgi_factory: dxgi::IDXGIFactory4,
+
+    info_queue: Option<d3d12::ID3D12InfoQueue>,
 
     pub(crate) heaps: super::internal::descriptor_heap::Dx12DescriptorHeapSet,
 
@@ -270,7 +276,7 @@ impl Drop for RafxDeviceContextDx12Inner {
 
 impl RafxDeviceContextDx12Inner {
     pub fn new(dx12_api_def: &RafxApiDefDx12) -> RafxResult<Self> {
-        let (dxgi_factory, dxgi_adapter, d3d12_device) = create_device(dx12_api_def)?;
+        let (dxgi_factory, dxgi_adapter, d3d12_device, info_queue) = create_device(dx12_api_def)?;
 
         let mut desc = Default::default();
         unsafe { dxgi_adapter.GetDesc1(&mut desc)? };
@@ -323,6 +329,8 @@ impl RafxDeviceContextDx12Inner {
             d3d12_device,
             dxgi_adapter,
             dxgi_factory,
+
+            info_queue,
 
             heaps,
 
@@ -427,6 +435,54 @@ impl RafxDeviceContextDx12 {
 
     pub fn allocator(&self) -> &Mutex<gpu_allocator::d3d12::Allocator> {
         &self.inner.allocator
+    }
+
+    /// Drain all queued D3D12 debug layer messages and print them to stderr.
+    /// No-op if validation is disabled (info_queue is None).
+    pub fn poll_debug_messages(&self) {
+        let Some(info_queue) = self.inner.info_queue.as_ref() else {
+            return;
+        };
+        unsafe {
+            let count = info_queue.GetNumStoredMessages();
+            if count == 0 {
+                return;
+            }
+            for i in 0..count {
+                let mut msg_len: usize = 0;
+                if info_queue
+                    .GetMessage(i, None, &mut msg_len)
+                    .is_err()
+                {
+                    continue;
+                }
+                let mut buf = vec![0u8; msg_len];
+                let msg_ptr = buf.as_mut_ptr() as *mut d3d12::D3D12_MESSAGE;
+                if info_queue
+                    .GetMessage(i, Some(msg_ptr), &mut msg_len)
+                    .is_err()
+                {
+                    continue;
+                }
+                let msg = &*msg_ptr;
+                let desc = std::ffi::CStr::from_ptr(msg.pDescription.cast());
+                let severity = match msg.Severity {
+                    d3d12::D3D12_MESSAGE_SEVERITY_CORRUPTION => "CORRUPTION",
+                    d3d12::D3D12_MESSAGE_SEVERITY_ERROR => "ERROR",
+                    d3d12::D3D12_MESSAGE_SEVERITY_WARNING => "WARNING",
+                    d3d12::D3D12_MESSAGE_SEVERITY_INFO => "INFO",
+                    d3d12::D3D12_MESSAGE_SEVERITY_MESSAGE => "MESSAGE",
+                    _ => "UNKNOWN",
+                };
+                eprintln!(
+                    "D3D12 {}: [{}] {}",
+                    severity,
+                    msg.ID.0,
+                    desc.to_string_lossy()
+                );
+            }
+            info_queue.ClearStoredMessages();
+        }
     }
 
     pub fn new(inner: Arc<RafxDeviceContextDx12Inner>) -> RafxResult<Self> {

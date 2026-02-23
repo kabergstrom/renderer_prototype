@@ -1010,6 +1010,7 @@ pub(crate) fn reflect_data<'a>(
         .iter()
         .map(|b| ((b.resource.set_index, b.resource.binding), &b.resource))
         .collect();
+    println!("final register map {:?}", final_register_map);
 
     let mut reflected_entry_points = Vec::new();
 

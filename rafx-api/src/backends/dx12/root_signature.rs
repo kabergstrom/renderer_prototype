@@ -137,14 +137,14 @@ impl RafxRootSignatureDx12 {
         stage: RafxShaderStageFlags,
     ) -> Option<RafxDescriptorIndex> {
         let mut found_descriptor = None;
-        println!("root constants {:?}", self.inner.push_constant_descriptors);
+        log::trace!("root constants {:?}", self.inner.push_constant_descriptors);
         for (stage_index, s) in ALL_SHADER_STAGE_FLAGS.iter().enumerate() {
             if s.intersects(stage) {
                 let s_descriptor_index = self.inner.push_constant_descriptors[stage_index];
                 if s_descriptor_index.is_some() {
                     if let Some(found_descriptor) = found_descriptor {
                         if found_descriptor != s_descriptor_index {
-                            println!(
+                            log::warn!(
                                 "Stages don't agree {:?} {:?}",
                                 found_descriptor, s_descriptor_index
                             );
@@ -612,7 +612,7 @@ impl RafxRootSignatureDx12 {
                     root_sig_error.GetBufferSize(),
                 );
                 let str = String::from_utf8_lossy(str_slice);
-                println!("root sig error {}", str);
+                log::error!("root sig error {}", str);
                 Err(str.to_string())?;
             }
 

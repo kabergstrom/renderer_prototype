@@ -102,7 +102,7 @@ impl RafxApiDx12 {
                         all_contexts.remove(&_create_index);
                         for (k, v) in all_contexts.iter_mut() {
                             v.resolve();
-                            println!("context allocation: {}\n{:?}", k, v);
+                            log::warn!("context allocation: {}\n{:?}", k, v);
                         }
                     }
                 }

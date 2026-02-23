@@ -161,7 +161,7 @@ impl Dx12MipmapResources {
                     root_sig_error.GetBufferSize(),
                 );
                 let str = String::from_utf8_lossy(str_slice);
-                println!("root sig error {}", str);
+                log::error!("root sig error {}", str);
                 Err(str.to_string())?;
             }
 
@@ -173,7 +173,7 @@ impl Dx12MipmapResources {
                 root_sig_string.GetBufferSize(),
             );
             let str = String::from_utf8_lossy(sig_string);
-            println!("root sig {}", str);
+            log::trace!("root sig {}", str);
 
             device_context
                 .d3d12_device()
