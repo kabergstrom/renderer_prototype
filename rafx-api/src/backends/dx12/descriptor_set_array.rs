@@ -52,12 +52,25 @@ pub struct RafxDescriptorSetTableInfo {
     pub root_index: u8,
 }
 
+/// Entry for a root descriptor (Root CBV / Root SRV) used for dynamic buffer bindings.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct RootDescriptorEntry {
+    pub root_param_index: u8,
+    /// 0 = CBV, 1 = SRV
+    pub descriptor_type: u8,
+    pub gpu_va: u64,
+}
+
+pub const MAX_ROOT_DESCRIPTORS: usize = 4;
+
 #[derive(Copy, Clone, Debug)]
 pub struct RafxDescriptorSetHandleDx12 {
     cbv_srv_uav_descriptor_id: Option<Dx12DescriptorId>,
     sampler_descriptor_id: Option<Dx12DescriptorId>,
     cbv_srv_uav_root_index: u8,
     sampler_root_index: u8,
+    root_descriptor_count: u8,
+    root_descriptors: [RootDescriptorEntry; MAX_ROOT_DESCRIPTORS],
 }
 
 impl RafxDescriptorSetHandleDx12 {
@@ -75,6 +88,14 @@ impl RafxDescriptorSetHandleDx12 {
 
     pub fn sampler_root_index(&self) -> u8 {
         self.sampler_root_index
+    }
+
+    pub fn root_descriptor_count(&self) -> u8 {
+        self.root_descriptor_count
+    }
+
+    pub fn root_descriptors(&self) -> &[RootDescriptorEntry] {
+        &self.root_descriptors[..self.root_descriptor_count as usize]
     }
 }
 
@@ -101,6 +122,8 @@ pub struct RafxDescriptorSetArrayDx12 {
     cbv_srv_uav_table_info: Option<RafxDescriptorSetTableInfo>,
     sampler_table_info: Option<RafxDescriptorSetTableInfo>,
     descriptor_set_array_length: usize,
+    root_descriptor_count: u8,
+    root_descriptors: Vec<[RootDescriptorEntry; MAX_ROOT_DESCRIPTORS]>,
 }
 
 impl std::fmt::Debug for RafxDescriptorSetArrayDx12 {
@@ -171,6 +194,8 @@ impl RafxDescriptorSetArrayDx12 {
             sampler_descriptor_id: None,
             cbv_srv_uav_root_index: 0,
             sampler_root_index: 0,
+            root_descriptor_count: 0,
+            root_descriptors: Default::default(),
         };
 
         if let Some(cbv_srv_uav_table_info) = &self.cbv_srv_uav_table_info {
@@ -186,6 +211,12 @@ impl RafxDescriptorSetArrayDx12 {
             ));
             handle.sampler_root_index = sampler_table_info.root_index;
         }
+
+        // Root descriptors carry their GPU VA + root param index in the handle.
+        // The actual GPU VA is populated when the descriptor set is written
+        // (queue_descriptor_set_update for dynamic bindings).
+        handle.root_descriptor_count = self.root_descriptor_count;
+        handle.root_descriptors = self.root_descriptors[index as usize];
 
         Some(handle)
     }
@@ -245,21 +276,34 @@ impl RafxDescriptorSetArrayDx12 {
             None
         };
 
+        // Build root descriptor entries from the layout's root_descriptors_params
+        let mut root_descriptor_count = 0u8;
+        let mut root_descriptors_arr = [RootDescriptorEntry::default(); MAX_ROOT_DESCRIPTORS];
+        for &desc_idx in &layout.root_descriptors_params {
+            let desc = &root_signature.inner.descriptors[desc_idx.0 as usize];
+            if let Some(root_param_index) = desc.root_param_index {
+                let dtype = if desc.resource_type == RafxResourceType::UNIFORM_BUFFER {
+                    0 // CBV
+                } else {
+                    1 // SRV
+                };
+                root_descriptors_arr[root_descriptor_count as usize] = RootDescriptorEntry {
+                    root_param_index: root_param_index as u8,
+                    descriptor_type: dtype,
+                    gpu_va: 0, // populated when descriptor is written
+                };
+                root_descriptor_count += 1;
+            }
+        }
+
         Ok(RafxDescriptorSetArrayDx12 {
             root_signature: RafxRootSignature::Dx12(root_signature),
             set_index: descriptor_set_array_def.set_index,
             cbv_srv_uav_table_info,
             sampler_table_info,
-            // cbv_srv_uav_first_id,
-            // cbv_srv_uav_stride,
-            // cbv_srv_uav_root_index: layout.cbv_srv_uav_table_root_index,
-            // sampler_first_id,
-            // sampler_stride,
-            // sampler_root_index: layout.sampler_table_root_index
-            //descriptor_sets,
-            //update_data,
-            //pending_writes: Vec::default(),
             descriptor_set_array_length: descriptor_set_array_def.array_length,
+            root_descriptor_count,
+            root_descriptors: vec![root_descriptors_arr; descriptor_set_array_def.array_length],
         })
     }
 
@@ -322,6 +366,25 @@ impl RafxDescriptorSetArrayDx12 {
             }
         };
         let descriptor = root_signature.descriptor(descriptor_index).unwrap();
+
+        // Root descriptors store GPU VA directly, bypassing the descriptor heap
+        if descriptor.root_param_index.is_some() {
+            if let Some(buffers) = update.elements.buffers {
+                let buffer = buffers[0];
+                let mut gpu_va = buffer.dx12_buffer().unwrap().gpu_address();
+                if let Some(offset_sizes) = update.elements.buffer_offset_sizes {
+                    gpu_va += offset_sizes[0].byte_offset;
+                }
+                // Find the matching root descriptor entry and update its GPU VA
+                for rd in &mut self.root_descriptors[update.array_index as usize][..self.root_descriptor_count as usize] {
+                    if rd.root_param_index == descriptor.root_param_index.unwrap() as u8 {
+                        rd.gpu_va = gpu_va;
+                        break;
+                    }
+                }
+            }
+            return Ok(());
+        }
 
         let use_sampler_heap = descriptor.resource_type == RafxResourceType::SAMPLER;
         let table_info = if use_sampler_heap {
