@@ -453,6 +453,14 @@ impl RafxDescriptorSetArrayDx12 {
                     let descriptor_id = Dx12DescriptorId(next_index);
                     next_index += 1;
                     let src_id = sampler.dx12_sampler().unwrap().dx12_sampler_descriptor();
+                    log::trace!(
+                        "dx12 SAMPLER copy: array_index={} src={:?} dst={:?} binding={} name={:?}",
+                        update.array_index,
+                        src_id,
+                        descriptor_id,
+                        descriptor.binding,
+                        descriptor.name,
+                    );
                     // Modify the update data
                     copy_descriptor_handle(
                         device_context.d3d12_device(),
@@ -571,7 +579,14 @@ impl RafxDescriptorSetArrayDx12 {
 
                             let src_id = texture.dx12_texture().unwrap().srv().unwrap();
 
-                            //println!("Copy descriptor handle {:?} to {:?}", src_id, descriptor_id);
+                            log::trace!(
+                                "dx12 TEXTURE copy: array_index={} src_srv={:?} dst_heap={:?} binding={} name={:?}",
+                                update.array_index,
+                                src_id,
+                                descriptor_id,
+                                descriptor.binding,
+                                descriptor.name,
+                            );
                             copy_descriptor_handle(
                                 device_context.d3d12_device(),
                                 &device_context.inner.heaps.cbv_srv_uav_heap,
