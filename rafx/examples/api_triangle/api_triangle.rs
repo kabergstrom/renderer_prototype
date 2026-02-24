@@ -223,6 +223,7 @@ fn run() -> RafxResult<()> {
         let root_signature = device_context.create_root_signature(&RafxRootSignatureDef {
             shaders: &[shader.clone()],
             immutable_samplers: &[],
+            dynamic_buffer_bindings: &[],
         })?;
 
         //

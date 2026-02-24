@@ -342,6 +342,9 @@ impl<'a> RafxImmutableSamplers<'a> {
 pub struct RafxRootSignatureDef<'a> {
     pub shaders: &'a [RafxShader],
     pub immutable_samplers: &'a [RafxImmutableSamplers<'a>],
+    /// Bindings listed here will use dynamic buffer offsets (Vulkan: UNIFORM_BUFFER_DYNAMIC /
+    /// STORAGE_BUFFER_DYNAMIC, DX12: Root CBV / Root SRV). Each entry is a (set, binding) pair.
+    pub dynamic_buffer_bindings: &'a [RafxShaderResourceBindingKey],
 }
 
 impl<'a> RafxRootSignatureDef<'a> {

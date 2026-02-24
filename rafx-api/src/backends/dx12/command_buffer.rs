@@ -554,6 +554,77 @@ impl RafxCommandBufferDx12 {
         )
     }
 
+    pub fn cmd_bind_descriptor_set_handle_dynamic(
+        &self,
+        root_signature: &RafxRootSignatureDx12,
+        _set_index: u32,
+        descriptor_set_handle: &RafxDescriptorSetHandleDx12,
+        dynamic_offsets: &[u32],
+    ) -> RafxResult<()> {
+        let mut inner = self.inner.borrow_mut();
+
+        // Bind normal descriptor tables (cbv_srv_uav + sampler)
+        let cbv_srv_uav_descriptor = descriptor_set_handle
+            .cbv_srv_uav_descriptor_id()
+            .map(|x| (x, descriptor_set_handle.cbv_srv_uav_root_index()));
+        let sampler_descriptor = descriptor_set_handle
+            .sampler_descriptor_id()
+            .map(|x| (x, descriptor_set_handle.sampler_root_index()));
+
+        Self::do_bind_descriptor_set(
+            &mut *inner,
+            root_signature,
+            cbv_srv_uav_descriptor,
+            sampler_descriptor,
+        )?;
+
+        // Bind root descriptors with dynamic offsets
+        let root_descs = descriptor_set_handle.root_descriptors();
+        for (i, rd) in root_descs.iter().enumerate() {
+            let offset = if i < dynamic_offsets.len() {
+                dynamic_offsets[i] as u64
+            } else {
+                0
+            };
+            let gpu_va = rd.gpu_va + offset;
+
+            unsafe {
+                match root_signature.pipeline_type() {
+                    RafxPipelineType::Graphics => {
+                        if rd.descriptor_type == 0 {
+                            // CBV
+                            inner.command_list.SetGraphicsRootConstantBufferView(
+                                rd.root_param_index as u32,
+                                gpu_va,
+                            );
+                        } else {
+                            // SRV
+                            inner.command_list.SetGraphicsRootShaderResourceView(
+                                rd.root_param_index as u32,
+                                gpu_va,
+                            );
+                        }
+                    }
+                    RafxPipelineType::Compute => {
+                        if rd.descriptor_type == 0 {
+                            inner.command_list.SetComputeRootConstantBufferView(
+                                rd.root_param_index as u32,
+                                gpu_va,
+                            );
+                        } else {
+                            inner.command_list.SetComputeRootShaderResourceView(
+                                rd.root_param_index as u32,
+                                gpu_va,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn cmd_bind_push_constant<T: Copy>(
         &self,
         root_signature: &RafxRootSignatureDx12,

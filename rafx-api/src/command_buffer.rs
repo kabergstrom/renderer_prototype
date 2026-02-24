@@ -588,6 +588,66 @@ impl RafxCommandBuffer {
         }
     }
 
+    /// Like `cmd_bind_descriptor_set_handle`, but passes dynamic buffer offsets.
+    /// Dynamic offsets are applied to bindings marked in `RafxRootSignatureDef::dynamic_buffer_bindings`.
+    pub fn cmd_bind_descriptor_set_handle_dynamic(
+        &self,
+        root_signature: &RafxRootSignature,
+        set_index: u32,
+        descriptor_set_handle: &RafxDescriptorSetHandle,
+        dynamic_offsets: &[u32],
+    ) -> RafxResult<()> {
+        match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxCommandBuffer::Dx12(inner) => inner.cmd_bind_descriptor_set_handle_dynamic(
+                root_signature.dx12_root_signature().unwrap(),
+                set_index,
+                descriptor_set_handle.dx12_descriptor_set_handle().unwrap(),
+                dynamic_offsets,
+            ),
+            #[cfg(feature = "rafx-vulkan")]
+            RafxCommandBuffer::Vk(inner) => inner.cmd_bind_descriptor_set_handle_dynamic(
+                root_signature.vk_root_signature().unwrap(),
+                set_index,
+                descriptor_set_handle.vk_descriptor_set_handle().unwrap(),
+                dynamic_offsets,
+            ),
+            #[cfg(feature = "rafx-metal")]
+            RafxCommandBuffer::Metal(inner) => inner.cmd_bind_descriptor_set_handle(
+                root_signature.metal_root_signature().unwrap(),
+                set_index,
+                descriptor_set_handle.metal_descriptor_set_handle().unwrap(),
+            ),
+            #[cfg(feature = "rafx-gles2")]
+            RafxCommandBuffer::Gles2(inner) => inner.cmd_bind_descriptor_set_handle(
+                root_signature.gles2_root_signature().unwrap(),
+                set_index,
+                descriptor_set_handle.gles2_descriptor_set_handle().unwrap(),
+            ),
+            #[cfg(feature = "rafx-gles3")]
+            RafxCommandBuffer::Gles3(inner) => inner.cmd_bind_descriptor_set_handle(
+                root_signature.gles3_root_signature().unwrap(),
+                set_index,
+                descriptor_set_handle.gles3_descriptor_set_handle().unwrap(),
+            ),
+            #[cfg(any(
+                feature = "rafx-empty",
+                not(any(
+                    feature = "rafx-dx12",
+                    feature = "rafx-metal",
+                    feature = "rafx-vulkan",
+                    feature = "rafx-gles2",
+                    feature = "rafx-gles3"
+                ))
+            ))]
+            RafxCommandBuffer::Empty(inner) => inner.cmd_bind_descriptor_set_handle(
+                root_signature.empty_root_signature().unwrap(),
+                set_index,
+                descriptor_set_handle.empty_descriptor_set_handle().unwrap(),
+            ),
+        }
+    }
+
     /// Binds a push constants for use by the shader in the currently bound pipeline.
     ///
     /// Multiple descriptor sets can be bound, but the number is limited to 4.

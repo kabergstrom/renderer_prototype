@@ -294,9 +294,12 @@ impl RafxRootSignatureDx12 {
             // indicate root constant, end-user has passed a resource type ROOT_CONSTANT
             // This may check being a uniform buffer and element count = 1
             let treat_as_root_constant = resource.resource_type == RafxResourceType::ROOT_CONSTANT;
-            //TODO: Add some additional override? Make it a resource type?
-            // This may check being a uniform buffer and element count = 1
-            let treat_as_root_descriptor = false;
+            // Dynamic buffer bindings become root descriptors (Root CBV / Root SRV)
+            let treat_as_root_descriptor = root_signature_def.dynamic_buffer_bindings.iter().any(|k| {
+                k.set == resource.set_index && k.binding == resource.binding
+            }) && (resource.resource_type == RafxResourceType::UNIFORM_BUFFER
+                || resource.resource_type == RafxResourceType::BUFFER)
+                && resource.element_count_normalized() == 1;
 
             if !treat_as_root_constant {
                 let layout: &mut DescriptorSetLayoutInfo =
@@ -548,6 +551,41 @@ impl RafxRootSignatureDx12 {
                 layout.sampler_table_descriptor_count = Some(total_descriptor_count);
                 layout.sampler_table_root_index = Some(root_params.len() as u8);
 
+                root_params.push(root_param);
+            }
+        }
+
+        //
+        // Add root descriptors (Root CBV / Root SRV for dynamic buffer bindings)
+        //
+        for layout_index in (0..MAX_DESCRIPTOR_SET_LAYOUTS).rev() {
+            let layout = &layouts[layout_index];
+            for &descriptor_index in &layout.root_descriptors_params {
+                let descriptor = &mut descriptors[descriptor_index.0 as usize];
+                descriptor.root_param_index = Some(root_params.len() as u32);
+
+                let param_type = if descriptor.resource_type == RafxResourceType::UNIFORM_BUFFER {
+                    d3d12::D3D12_ROOT_PARAMETER_TYPE_CBV
+                } else {
+                    // BUFFER (SSBO) → Root SRV
+                    d3d12::D3D12_ROOT_PARAMETER_TYPE_SRV
+                };
+
+                log::info!(
+                    "root descriptor {:?}: space {} reg {} type {:?} root index {}",
+                    descriptor.name,
+                    descriptor.register_space,
+                    descriptor.register,
+                    param_type,
+                    root_params.len(),
+                );
+
+                let mut root_param = d3d12::D3D12_ROOT_PARAMETER1::default();
+                root_param.ParameterType = param_type;
+                root_param.ShaderVisibility = descriptor.used_in_shader_stages.into();
+                root_param.Anonymous.Descriptor.ShaderRegister = descriptor.register;
+                root_param.Anonymous.Descriptor.RegisterSpace = descriptor.register_space;
+                root_param.Anonymous.Descriptor.Flags = d3d12::D3D12_ROOT_DESCRIPTOR_FLAG_NONE;
                 root_params.push(root_param);
             }
         }

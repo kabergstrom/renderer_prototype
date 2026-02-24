@@ -870,6 +870,7 @@ impl ResourceLookupSet {
                     .create_root_signature(&RafxRootSignatureDef {
                         shaders: &shaders,
                         immutable_samplers: &immutable_samplers,
+                        dynamic_buffer_bindings: &[],
                     })?;
 
             let shaders = shader_resources.iter().cloned().collect();

@@ -516,10 +516,9 @@ impl RafxDescriptorSetArrayVulkan {
             RafxResourceType::UNIFORM_BUFFER
             | RafxResourceType::BUFFER
             | RafxResourceType::BUFFER_READ_WRITE => {
-                if descriptor.vk_type.unwrap() == vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC {
-                    //TODO: Add support for dynamic uniforms
-                    unimplemented!();
-                }
+                // UNIFORM_BUFFER_DYNAMIC / STORAGE_BUFFER_DYNAMIC use the same descriptor
+                // write path as their non-dynamic counterparts. The dynamic offset is
+                // applied at bind time via cmd_bind_descriptor_set_handle_dynamic.
 
                 let buffers = update.elements.buffers.ok_or_else(||
                     format!(

@@ -420,6 +420,29 @@ impl RafxCommandBufferVulkan {
         Ok(())
     }
 
+    pub fn cmd_bind_descriptor_set_handle_dynamic(
+        &self,
+        root_signature: &RafxRootSignatureVulkan,
+        set_index: u32,
+        descriptor_set_handle: &RafxDescriptorSetHandleVulkan,
+        dynamic_offsets: &[u32],
+    ) -> RafxResult<()> {
+        let bind_point = root_signature.pipeline_type();
+
+        unsafe {
+            self.device_context.device().cmd_bind_descriptor_sets(
+                self.vk_command_buffer,
+                super::util::pipeline_type_pipeline_bind_point(bind_point),
+                root_signature.vk_pipeline_layout(),
+                set_index,
+                &[descriptor_set_handle.0],
+                dynamic_offsets,
+            )
+        }
+
+        Ok(())
+    }
+
     pub fn cmd_bind_push_constant<T: Copy>(
         &self,
         root_signature: &RafxRootSignatureVulkan,

@@ -311,7 +311,8 @@ impl Dx12MipmapResources {
                             samplers: &[sampler]
                         }
                     ],
-                    shaders: &[shader.clone()]
+                    shaders: &[shader.clone()],
+                    dynamic_buffer_bindings: &[],
                 })?);
 
                 let pipeline = RafxPipeline::Dx12(dx12_device_context.create_compute_pipeline(&RafxComputePipelineDef {

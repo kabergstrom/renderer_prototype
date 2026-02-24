@@ -286,6 +286,7 @@ pub fn update_loop(
                 key: RafxImmutableSamplerKey::Name("smp"),
                 samplers: &[sampler],
             }],
+            dynamic_buffer_bindings: &[],
         })?;
 
         //

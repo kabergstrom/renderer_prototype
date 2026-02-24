@@ -231,18 +231,32 @@ impl RafxRootSignatureVulkan {
                     .descriptor_type(vk_descriptor_type)
                     .stage_flags(vk_stage_flags);
 
-                // Determine if flagged as root constant buffer/dynamic uniform buffer. If so, update
-                // the type. This was being done by detecting a pattern in the name string. For now
-                // this is dead code. It should probably be done by checking the descriptor type.
-                // let is_dynamic_uniform_buffer = false;
-                // if is_dynamic_uniform_buffer {
-                //     if resource.descriptor_count == 1 {
-                //         binding =
-                //             binding.descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC);
-                //     } else {
-                //         Err("Cannot use dynamic uniform buffer an array")?;
-                //     }
-                // }
+                // Check if this binding is flagged as dynamic via root_signature_def
+                let is_dynamic = root_signature_def.dynamic_buffer_bindings.iter().any(|k| {
+                    k.set == resource.set_index && k.binding == resource.binding
+                });
+                if is_dynamic {
+                    if resource.element_count_normalized() != 1 {
+                        Err(format!(
+                            "Cannot use dynamic buffer binding for array (set={} binding={} count={})",
+                            resource.set_index, resource.binding, resource.element_count_normalized()
+                        ))?;
+                    }
+                    match vk_descriptor_type {
+                        vk::DescriptorType::UNIFORM_BUFFER => {
+                            binding = binding.descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC);
+                        }
+                        vk::DescriptorType::STORAGE_BUFFER => {
+                            binding = binding.descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC);
+                        }
+                        _ => {
+                            Err(format!(
+                                "dynamic_buffer_bindings entry (set={} binding={}) has unsupported descriptor type {:?}",
+                                resource.set_index, resource.binding, vk_descriptor_type
+                            ))?;
+                        }
+                    }
+                }
 
                 let immutable_sampler = crate::internal_shared::find_immutable_sampler_index(
                     root_signature_def.immutable_samplers,
@@ -293,22 +307,15 @@ impl RafxRootSignatureVulkan {
                         resource.name
                     ))?;
                 } else {
-                    // dynamic storage buffers not supported
-                    assert_ne!(
-                        binding.descriptor_type,
-                        vk::DescriptorType::STORAGE_BUFFER_DYNAMIC
-                    );
-
-                    // More than one dynamic descriptor not supported right now
-                    assert!(layout.dynamic_descriptor_indexes.is_empty());
-
                     //
                     // Keep a lookup for dynamic descriptors
                     //
                     let descriptor_index = RafxDescriptorIndex(descriptors.len() as u32);
-                    if binding.descriptor_type == vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC {
+                    if binding.descriptor_type == vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC
+                        || binding.descriptor_type == vk::DescriptorType::STORAGE_BUFFER_DYNAMIC
+                    {
                         layout.dynamic_descriptor_indexes.push(descriptor_index);
-                    };
+                    }
 
                     let update_data_offset_in_set = Some(layout.update_data_count_per_set);
 
