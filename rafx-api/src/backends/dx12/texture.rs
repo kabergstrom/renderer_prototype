@@ -817,8 +817,8 @@ impl RafxTextureDx12 {
             {
                 resource_category = gpu_allocator::d3d12::ResourceCategory::RtvDsvTexture;
                 d3d_clear_value.Format = dxgi_format;
-                d3d_clear_value.Anonymous.DepthStencil.Depth = 0.0;
-                d3d_clear_value.Anonymous.DepthStencil.Stencil = 0;
+                d3d_clear_value.Anonymous.DepthStencil.Depth = texture_def.clear_value[0];
+                d3d_clear_value.Anonymous.DepthStencil.Stencil = texture_def.clear_value[1] as u8;
                 Some(&d3d_clear_value)
             } else if texture_def
                 .resource_type
@@ -826,7 +826,7 @@ impl RafxTextureDx12 {
             {
                 resource_category = gpu_allocator::d3d12::ResourceCategory::RtvDsvTexture;
                 d3d_clear_value.Format = dxgi_format;
-                d3d_clear_value.Anonymous.Color = [0.0, 0.0, 0.0, 0.0];
+                d3d_clear_value.Anonymous.Color = texture_def.clear_value;
                 Some(&d3d_clear_value)
             } else {
                 None

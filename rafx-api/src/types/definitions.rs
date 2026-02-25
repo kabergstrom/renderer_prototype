@@ -173,6 +173,9 @@ pub struct RafxTextureDef {
     // descriptors?
     // pointer to image?
     pub dimensions: RafxTextureDimensions,
+    /// Optimized clear value for DX12 render targets. For depth/stencil textures, `[0]` is depth
+    /// (default 1.0) and `[1]` is stencil cast to f32. For color render targets, RGBA clear color.
+    pub clear_value: [f32; 4],
 }
 
 impl Default for RafxTextureDef {
@@ -189,6 +192,7 @@ impl Default for RafxTextureDef {
             format: RafxFormat::UNDEFINED,
             resource_type: RafxResourceType::TEXTURE,
             dimensions: RafxTextureDimensions::Auto,
+            clear_value: [1.0, 0.0, 0.0, 0.0],
         }
     }
 }

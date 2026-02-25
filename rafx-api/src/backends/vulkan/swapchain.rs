@@ -439,7 +439,7 @@ impl RafxSwapchainVulkanInstance {
                     mip_count: 1,
                     format,
                     resource_type,
-                    //clear_value,
+                    clear_value: Default::default(),
                     sample_count: RafxSampleCount::SampleCount1,
                     //sample_quality
                     dimensions: RafxTextureDimensions::Dim2D,
