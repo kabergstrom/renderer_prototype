@@ -1,10 +1,16 @@
 use super::internal::VkQueue;
 use crate::vulkan::{
     RafxCommandBufferVulkan, RafxCommandPoolVulkan, RafxDeviceContextVulkan, RafxFenceVulkan,
-    RafxSemaphoreVulkan, RafxSwapchainVulkan,
+    RafxSemaphoreVulkan, RafxSwapchainVulkan, RafxTimelineSemaphoreVulkan,
 };
 use crate::*;
 use ash::vk;
+
+/// A timeline semaphore wait or signal entry for queue submission.
+pub struct TimelineSemaphoreSubmit<'a> {
+    pub semaphore: &'a RafxTimelineSemaphoreVulkan,
+    pub value: u64,
+}
 
 #[derive(Clone, Debug)]
 pub struct RafxQueueVulkan {
@@ -129,6 +135,88 @@ impl RafxQueueVulkan {
                 .device_context()
                 .device()
                 .queue_submit(*queue, &[*submit_info], fence)?;
+        }
+
+        if let Some(signal_fence) = signal_fence {
+            signal_fence.set_submitted(true);
+        }
+
+        Ok(())
+    }
+
+    /// Submit command buffers with timeline semaphore waits and signals.
+    /// Binary semaphores and fences can be mixed in alongside timeline semaphores.
+    pub fn submit_with_timeline(
+        &self,
+        command_buffers: &[&RafxCommandBufferVulkan],
+        wait_binary: &[&RafxSemaphoreVulkan],
+        signal_binary: &[&RafxSemaphoreVulkan],
+        wait_timeline: &[TimelineSemaphoreSubmit<'_>],
+        signal_timeline: &[TimelineSemaphoreSubmit<'_>],
+        signal_fence: Option<&RafxFenceVulkan>,
+    ) -> RafxResult<()> {
+        let mut command_buffer_list = Vec::with_capacity(command_buffers.len());
+        for cb in command_buffers {
+            command_buffer_list.push(cb.vk_command_buffer());
+        }
+
+        // Build combined semaphore lists (binary first, then timeline)
+        let mut wait_semaphore_list = Vec::new();
+        let mut wait_values = Vec::new();
+        let mut wait_dst_stage_mask = Vec::new();
+
+        for sem in wait_binary {
+            if sem.signal_available() {
+                wait_semaphore_list.push(sem.vk_semaphore());
+                wait_values.push(0u64); // binary semaphores use value 0
+                wait_dst_stage_mask.push(vk::PipelineStageFlags::ALL_COMMANDS);
+                sem.set_signal_available(false);
+            }
+        }
+        for ts in wait_timeline {
+            wait_semaphore_list.push(ts.semaphore.vk_semaphore());
+            wait_values.push(ts.value);
+            wait_dst_stage_mask.push(vk::PipelineStageFlags::ALL_COMMANDS);
+        }
+
+        let mut signal_semaphore_list = Vec::new();
+        let mut signal_values = Vec::new();
+
+        for sem in signal_binary {
+            if !sem.signal_available() {
+                signal_semaphore_list.push(sem.vk_semaphore());
+                signal_values.push(0u64);
+                sem.set_signal_available(true);
+            }
+        }
+        for ts in signal_timeline {
+            signal_semaphore_list.push(ts.semaphore.vk_semaphore());
+            signal_values.push(ts.value);
+        }
+
+        let mut timeline_info = vk::TimelineSemaphoreSubmitInfo::builder()
+            .wait_semaphore_values(&wait_values)
+            .signal_semaphore_values(&signal_values)
+            .build();
+
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(&wait_semaphore_list)
+            .wait_dst_stage_mask(&wait_dst_stage_mask)
+            .signal_semaphores(&signal_semaphore_list)
+            .command_buffers(&command_buffer_list)
+            .push_next(&mut timeline_info)
+            .build();
+
+        let fence = signal_fence
+            .map(|x| x.vk_fence())
+            .unwrap_or(vk::Fence::null());
+
+        unsafe {
+            let queue = self.queue.queue().lock().unwrap();
+            self.queue
+                .device_context()
+                .device()
+                .queue_submit(*queue, &[submit_info], fence)?;
         }
 
         if let Some(signal_fence) = signal_fence {

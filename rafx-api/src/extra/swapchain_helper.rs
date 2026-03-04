@@ -2,6 +2,7 @@ use crate::{
     RafxCommandBuffer, RafxDeviceContext, RafxError, RafxFence, RafxFenceStatus, RafxFormat,
     RafxPresentSuccessResult, RafxQueue, RafxResult, RafxSemaphore, RafxSwapchain,
     RafxSwapchainColorSpace, RafxSwapchainDef, RafxSwapchainImage, RafxTexture,
+    RafxTimelineSemaphore,
 };
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -130,6 +131,67 @@ impl RafxPresentableFrame {
         // Let the shared state arc drop, this will unblock the next frame
         let shared_state = self.shared_state.take().unwrap();
         shared_state.result_tx.send(result.clone()).unwrap();
+
+        result
+    }
+
+    /// Like present(), but also waits/signals timeline semaphores alongside the binary ones.
+    pub fn present_with_timeline(
+        mut self,
+        queue: &RafxQueue,
+        command_buffers: &[&RafxCommandBuffer],
+        wait_semaphores: &[&RafxSemaphore],
+        wait_timeline: &[(&RafxTimelineSemaphore, u64)],
+        signal_timeline: &[(&RafxTimelineSemaphore, u64)],
+    ) -> RafxResult<RafxPresentSuccessResult> {
+        let result =
+            self.do_present_with_timeline(queue, command_buffers, wait_semaphores, wait_timeline, signal_timeline);
+        let shared_state = self.shared_state.take().unwrap();
+        shared_state.result_tx.send(result.clone()).unwrap();
+        result
+    }
+
+    fn do_present_with_timeline(
+        &mut self,
+        queue: &RafxQueue,
+        command_buffers: &[&RafxCommandBuffer],
+        wait_semaphores: &[&RafxSemaphore],
+        wait_timeline: &[(&RafxTimelineSemaphore, u64)],
+        signal_timeline: &[(&RafxTimelineSemaphore, u64)],
+    ) -> RafxResult<RafxPresentSuccessResult> {
+        let shared_state = self.shared_state.as_ref().unwrap();
+        let sync_frame_index = shared_state.sync_frame_index.load(Ordering::Relaxed);
+        assert!(self.sync_frame_index == sync_frame_index);
+
+        let frame_fence = &shared_state.in_flight_fences[sync_frame_index];
+        let mut submit_wait_semaphores =
+            vec![&shared_state.image_available_semaphores[sync_frame_index]];
+        submit_wait_semaphores.extend_from_slice(wait_semaphores);
+        let signal_semaphores = [&shared_state.render_finished_semaphores[sync_frame_index]];
+
+        queue.submit_with_timeline(
+            command_buffers,
+            &submit_wait_semaphores,
+            &signal_semaphores,
+            wait_timeline,
+            signal_timeline,
+            Some(frame_fence),
+        )?;
+
+        let swapchain = shared_state.swapchain.lock().unwrap();
+        let result = queue.present(
+            &*swapchain,
+            &signal_semaphores,
+            self.swapchain_image.swapchain_image_index,
+        );
+
+        shared_state.sync_frame_index.store(
+            (sync_frame_index + 1) % shared_state.in_flight_fences.len(),
+            Ordering::Relaxed,
+        );
+        shared_state
+            .global_frame_index
+            .fetch_add(1, Ordering::Relaxed);
 
         result
     }

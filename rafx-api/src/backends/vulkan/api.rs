@@ -48,11 +48,12 @@ pub struct RafxApiDefVulkan {
 
     /// If possible, enable the tagging of vulkan objects with debug names.
     pub enable_debug_names: bool,
-    // The OS-specific layers/extensions are already included. Debug layers/extension are included
-    // if enable_validation is true
-    //TODO: Additional instance layer names
-    //TODO: Additional instance extension names
-    //TODO: Additional device extension names
+
+    /// Additional instance extensions to enable beyond the defaults.
+    pub additional_instance_extensions: Vec<CString>,
+
+    /// Additional device extensions to enable beyond the defaults.
+    pub additional_device_extensions: Vec<CString>,
 }
 
 impl Default for RafxApiDefVulkan {
@@ -63,6 +64,8 @@ impl Default for RafxApiDefVulkan {
             validation_mode: Default::default(),
             physical_device_features: None,
             enable_debug_names: false,
+            additional_instance_extensions: Vec::new(),
+            additional_device_extensions: Vec::new(),
         }
     }
 }
@@ -130,6 +133,7 @@ impl RafxApiVulkan {
             require_validation_layers_present,
             validation_layer_debug_report_flags,
             vk_api_def.enable_debug_names,
+            &vk_api_def.additional_instance_extensions,
         )?;
 
         let inner = Arc::new(RafxDeviceContextVulkanInner::new(&instance, &vk_api_def)?);

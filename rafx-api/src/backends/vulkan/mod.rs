@@ -28,6 +28,9 @@ pub use fence::*;
 mod semaphore;
 pub use semaphore::*;
 
+mod timeline_semaphore;
+pub use timeline_semaphore::*;
+
 mod texture;
 pub use texture::*;
 

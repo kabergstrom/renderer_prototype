@@ -27,6 +27,7 @@ impl VkInstance {
         require_validation_layers_present: bool,
         validation_layer_debug_report_flags: vk::DebugUtilsMessageSeverityFlagsEXT,
         enable_debug_names: bool,
+        additional_instance_extensions: &[CString],
     ) -> RafxResult<VkInstance> {
         // Determine the supported version of vulkan that's available
         let vulkan_version = match entry.entry().try_enumerate_instance_version()? {
@@ -145,6 +146,10 @@ impl VkInstance {
                 extension_names.push(swapchain_extension_name.as_ptr() as *const i8);
                 create_instance_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
             }
+        }
+
+        for ext in additional_instance_extensions {
+            extension_names.push(ext.as_ptr());
         }
 
         if log::log_enabled!(log::Level::Debug) {

@@ -12,7 +12,7 @@ use crate::vulkan::{
 };
 use ash::extensions::khr;
 use fnv::FnvHashMap;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 #[cfg(debug_assertions)]
 #[cfg(feature = "track-device-contexts")]
 use std::sync::atomic::AtomicU64;
@@ -80,6 +80,10 @@ pub struct RafxDeviceContextVulkanInner {
     // lock ensures that the present operations for those swapchains do not occur concurrently
     pub(crate) dedicated_present_queue_lock: Mutex<()>,
 
+    // Device memories for externally-allocated images (bypassing gpu_allocator).
+    // Keyed by VkImage handle so export_texture_handle can find the backing memory.
+    pub(crate) external_device_memories: Mutex<FnvHashMap<vk::Image, vk::DeviceMemory>>,
+
     device: ash::Device,
     allocator: ManuallyDrop<Mutex<gpu_allocator::vulkan::Allocator>>,
     destroyed: AtomicBool,
@@ -103,6 +107,13 @@ impl Drop for RafxDeviceContextVulkanInner {
         if !self.destroyed.swap(true, Ordering::AcqRel) {
             unsafe {
                 log::trace!("destroying device");
+
+                // Free externally-managed device memories
+                for (image, memory) in self.external_device_memories.lock().unwrap().drain() {
+                    self.device.destroy_image(image, None);
+                    self.device.free_memory(memory, None);
+                }
+
                 self.allocator
                     .lock()
                     .unwrap()
@@ -146,6 +157,7 @@ impl RafxDeviceContextVulkanInner {
             &physical_device_info,
             &queue_requirements,
             &vk_api_def.physical_device_features,
+            &vk_api_def.additional_device_extensions,
         )?;
 
         let queue_allocator = VkQueueAllocatorSet::new(
@@ -200,6 +212,7 @@ impl RafxDeviceContextVulkanInner {
             device_info,
             queue_allocator,
             dedicated_present_queue_lock: Mutex::default(),
+            external_device_memories: Mutex::new(FnvHashMap::default()),
             entry: instance.entry.clone(),
             instance: instance.instance.clone(),
             physical_device,
@@ -480,6 +493,596 @@ impl RafxDeviceContextVulkan {
     // ) -> RafxResult<RafxShaderModuleVulkan> {
     //     RafxShaderModuleVulkan::new_from_spv(self, spv)
     // }
+
+    pub fn create_exportable_texture(
+        &self,
+        texture_def: &RafxTextureDef,
+    ) -> RafxResult<RafxTextureVulkan> {
+        texture_def.verify();
+
+        let dimensions = texture_def
+            .dimensions
+            .determine_dimensions(texture_def.extents);
+        let image_type = match dimensions {
+            crate::RafxTextureDimensions::Dim1D => vk::ImageType::TYPE_1D,
+            crate::RafxTextureDimensions::Dim2D => vk::ImageType::TYPE_2D,
+            crate::RafxTextureDimensions::Dim3D => vk::ImageType::TYPE_3D,
+            crate::RafxTextureDimensions::Auto => panic!("dimensions() should not return auto"),
+        };
+
+        let format_vk: vk::Format = texture_def.format.into();
+
+        let mut usage_flags =
+            super::util::resource_type_image_usage_flags(texture_def.resource_type);
+        if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_COLOR)
+        {
+            usage_flags |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
+        }
+        if usage_flags.intersects(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::STORAGE) {
+            usage_flags |= vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST;
+        }
+
+        let extent = vk::Extent3D {
+            width: texture_def.extents.width,
+            height: texture_def.extents.height,
+            depth: texture_def.extents.depth,
+        };
+
+        #[cfg(target_os = "linux")]
+        let (image, device_memory) = {
+            let mut external_info = vk::ExternalMemoryImageCreateInfo::builder()
+                .handle_types(vk::ExternalMemoryHandleTypeFlags::OPAQUE_FD)
+                .build();
+
+            let image_create_info = vk::ImageCreateInfo::builder()
+                .image_type(image_type)
+                .extent(extent)
+                .mip_levels(texture_def.mip_count)
+                .array_layers(texture_def.array_length)
+                .format(format_vk)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(usage_flags)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .samples(texture_def.sample_count.into())
+                .push_next(&mut external_info);
+
+            let device = self.device();
+            let image = unsafe { device.create_image(&image_create_info, None)? };
+
+            let mem_reqs = unsafe { device.get_image_memory_requirements(image) };
+
+            let mem_type_index = find_memory_type(
+                self,
+                mem_reqs.memory_type_bits,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
+
+            let mut export_info = vk::ExportMemoryAllocateInfo::builder()
+                .handle_types(vk::ExternalMemoryHandleTypeFlags::OPAQUE_FD)
+                .build();
+            let mut dedicated_info = vk::MemoryDedicatedAllocateInfo::builder()
+                .image(image)
+                .build();
+
+            let alloc_info = vk::MemoryAllocateInfo::builder()
+                .allocation_size(mem_reqs.size)
+                .memory_type_index(mem_type_index)
+                .push_next(&mut export_info)
+                .push_next(&mut dedicated_info);
+
+            let device_memory = unsafe { device.allocate_memory(&alloc_info, None)? };
+            unsafe { device.bind_image_memory(image, device_memory, 0)? };
+
+            (image, device_memory)
+        };
+
+        #[cfg(target_os = "macos")]
+        let (image, device_memory) = {
+            eprintln!("  create_exportable_texture: macOS path — chaining ExportMetalObjectCreateInfoEXT");
+            // Chain ExportMetalObjectCreateInfoEXT to request IOSurface-backed image
+            let mut metal_export_info = vk::ExportMetalObjectCreateInfoEXT::builder()
+                .export_object_type(vk::ExportMetalObjectTypeFlagsEXT::METAL_IOSURFACE)
+                .build();
+
+            let image_create_info = vk::ImageCreateInfo::builder()
+                .image_type(image_type)
+                .extent(extent)
+                .mip_levels(texture_def.mip_count)
+                .array_layers(texture_def.array_length)
+                .format(format_vk)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(usage_flags)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .samples(texture_def.sample_count.into())
+                .push_next(&mut metal_export_info);
+
+            let device = self.device();
+            eprintln!("  create_exportable_texture: calling vkCreateImage...");
+            let image = unsafe { device.create_image(&image_create_info, None)? };
+            eprintln!("  create_exportable_texture: vkCreateImage OK");
+
+            let mem_reqs = unsafe { device.get_image_memory_requirements(image) };
+            eprintln!("  create_exportable_texture: mem_reqs size={}, type_bits={:#x}", mem_reqs.size, mem_reqs.memory_type_bits);
+
+            let mem_type_index = find_memory_type(
+                self,
+                mem_reqs.memory_type_bits,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
+            eprintln!("  create_exportable_texture: mem_type_index={}", mem_type_index);
+
+            let mut dedicated_info = vk::MemoryDedicatedAllocateInfo::builder()
+                .image(image)
+                .build();
+
+            let alloc_info = vk::MemoryAllocateInfo::builder()
+                .allocation_size(mem_reqs.size)
+                .memory_type_index(mem_type_index)
+                .push_next(&mut dedicated_info);
+
+            eprintln!("  create_exportable_texture: calling vkAllocateMemory...");
+            let device_memory = unsafe { device.allocate_memory(&alloc_info, None)? };
+            eprintln!("  create_exportable_texture: calling vkBindImageMemory...");
+            unsafe { device.bind_image_memory(image, device_memory, 0)? };
+            eprintln!("  create_exportable_texture: image created and bound OK");
+
+            (image, device_memory)
+        };
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        return Err(RafxError::StringError(
+            "Exportable textures not supported on this platform".to_string(),
+        ));
+
+        let raw_image = crate::vulkan::RafxRawImageVulkan {
+            image,
+            // allocation is None — we manage device_memory ourselves.
+            // The image+memory are cleaned up by ExternalImageCleanup stored in the texture.
+            allocation: None,
+        };
+
+        // Store the device memory so we can free it and export fd from it.
+        // We attach it via a wrapper that we keep alive alongside the texture.
+        let texture = RafxTextureVulkan::from_existing(self, Some(raw_image), texture_def)?;
+
+        // Stash the device_memory on a side-table so export_texture_handle can find it
+        self.inner
+            .external_device_memories
+            .lock()
+            .unwrap()
+            .insert(texture.vk_image(), device_memory);
+
+        Ok(texture)
+    }
+
+    pub fn export_texture_handle(
+        &self,
+        texture: &RafxTextureVulkan,
+    ) -> RafxResult<crate::RafxExternalTextureHandle> {
+        #[cfg(target_os = "linux")]
+        {
+            let device_memory = *self
+                .inner
+                .external_device_memories
+                .lock()
+                .unwrap()
+                .get(&texture.vk_image())
+                .ok_or_else(|| {
+                    RafxError::StringError(
+                        "Texture was not created with create_exportable_texture".to_string(),
+                    )
+                })?;
+
+            let fd_loader =
+                ash::extensions::khr::ExternalMemoryFd::new(self.instance(), self.device());
+            let fd_info = vk::MemoryGetFdInfoKHR::builder()
+                .memory(device_memory)
+                .handle_type(vk::ExternalMemoryHandleTypeFlags::OPAQUE_FD);
+            let fd = unsafe { fd_loader.get_memory_fd(&fd_info)? };
+            Ok(crate::RafxExternalTextureHandle::Fd(fd))
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let metal_objects_fn = vk::ExtMetalObjectsFn::load(|name| unsafe {
+                std::mem::transmute(
+                    self.instance()
+                        .get_device_proc_addr(self.device().handle(), name.as_ptr()),
+                )
+            });
+
+            let mut iosurface_info = vk::ExportMetalIOSurfaceInfoEXT::builder()
+                .image(texture.vk_image())
+                .build();
+            let mut export_info = vk::ExportMetalObjectsInfoEXT::builder()
+                .push_next(&mut iosurface_info)
+                .build();
+
+            unsafe {
+                (metal_objects_fn.export_metal_objects_ext)(self.device().handle(), &mut export_info)
+            };
+
+            if iosurface_info.io_surface.is_null() {
+                return Err(RafxError::StringError(
+                    "Failed to export IOSurface from texture".to_string(),
+                ));
+            }
+
+            let id = unsafe { IOSurfaceGetID(iosurface_info.io_surface) };
+            Ok(crate::RafxExternalTextureHandle::IOSurfaceId(id))
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        Err(RafxError::StringError(
+            "Texture export not supported on this platform".to_string(),
+        ))
+    }
+
+    pub fn import_texture(
+        &self,
+        texture_def: &RafxTextureDef,
+        handle: crate::RafxExternalTextureHandle,
+    ) -> RafxResult<RafxTextureVulkan> {
+        texture_def.verify();
+
+        let dimensions = texture_def
+            .dimensions
+            .determine_dimensions(texture_def.extents);
+        let image_type = match dimensions {
+            crate::RafxTextureDimensions::Dim1D => vk::ImageType::TYPE_1D,
+            crate::RafxTextureDimensions::Dim2D => vk::ImageType::TYPE_2D,
+            crate::RafxTextureDimensions::Dim3D => vk::ImageType::TYPE_3D,
+            crate::RafxTextureDimensions::Auto => panic!("dimensions() should not return auto"),
+        };
+
+        let format_vk: vk::Format = texture_def.format.into();
+
+        let mut usage_flags =
+            super::util::resource_type_image_usage_flags(texture_def.resource_type);
+        if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_COLOR)
+        {
+            usage_flags |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
+        }
+        if usage_flags.intersects(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::STORAGE) {
+            usage_flags |= vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST;
+        }
+
+        let extent = vk::Extent3D {
+            width: texture_def.extents.width,
+            height: texture_def.extents.height,
+            depth: texture_def.extents.depth,
+        };
+
+        #[cfg(target_os = "linux")]
+        {
+            let crate::RafxExternalTextureHandle::Fd(fd) = handle else {
+                return Err(RafxError::StringError(
+                    "Expected Fd handle on Linux".to_string(),
+                ));
+            };
+
+            let mut external_info = vk::ExternalMemoryImageCreateInfo::builder()
+                .handle_types(vk::ExternalMemoryHandleTypeFlags::OPAQUE_FD)
+                .build();
+
+            let image_create_info = vk::ImageCreateInfo::builder()
+                .image_type(image_type)
+                .extent(extent)
+                .mip_levels(texture_def.mip_count)
+                .array_layers(texture_def.array_length)
+                .format(format_vk)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(usage_flags)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .samples(texture_def.sample_count.into())
+                .push_next(&mut external_info);
+
+            let device = self.device();
+            let image = unsafe { device.create_image(&image_create_info, None)? };
+
+            let mem_reqs = unsafe { device.get_image_memory_requirements(image) };
+
+            let mem_type_index = find_memory_type(
+                self,
+                mem_reqs.memory_type_bits,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
+
+            let mut import_fd_info = vk::ImportMemoryFdInfoKHR::builder()
+                .handle_type(vk::ExternalMemoryHandleTypeFlags::OPAQUE_FD)
+                .fd(fd)
+                .build();
+            let mut dedicated_info = vk::MemoryDedicatedAllocateInfo::builder()
+                .image(image)
+                .build();
+
+            let alloc_info = vk::MemoryAllocateInfo::builder()
+                .allocation_size(mem_reqs.size)
+                .memory_type_index(mem_type_index)
+                .push_next(&mut import_fd_info)
+                .push_next(&mut dedicated_info);
+
+            let device_memory = unsafe { device.allocate_memory(&alloc_info, None)? };
+            unsafe { device.bind_image_memory(image, device_memory, 0)? };
+
+            let raw_image = crate::vulkan::RafxRawImageVulkan {
+                image,
+                allocation: None,
+            };
+
+            self.inner
+                .external_device_memories
+                .lock()
+                .unwrap()
+                .insert(image, device_memory);
+
+            RafxTextureVulkan::from_existing(self, Some(raw_image), texture_def)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let crate::RafxExternalTextureHandle::IOSurfaceId(surface_id) = handle else {
+                return Err(RafxError::StringError(
+                    "Expected IOSurfaceId handle on macOS".to_string(),
+                ));
+            };
+
+            let io_surface = unsafe { IOSurfaceLookup(surface_id) };
+            if io_surface.is_null() {
+                return Err(RafxError::StringError(format!(
+                    "IOSurfaceLookup({surface_id}) returned null"
+                )));
+            }
+
+            let mut import_iosurface = vk::ImportMetalIOSurfaceInfoEXT::builder()
+                .io_surface(io_surface)
+                .build();
+
+            let image_create_info = vk::ImageCreateInfo::builder()
+                .image_type(image_type)
+                .extent(extent)
+                .mip_levels(texture_def.mip_count)
+                .array_layers(texture_def.array_length)
+                .format(format_vk)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .usage(usage_flags)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .samples(texture_def.sample_count.into())
+                .push_next(&mut import_iosurface);
+
+            let device = self.device();
+            let image = unsafe { device.create_image(&image_create_info, None)? };
+
+            let mem_reqs = unsafe { device.get_image_memory_requirements(image) };
+            let mem_type_index = find_memory_type(
+                self,
+                mem_reqs.memory_type_bits,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            )?;
+
+            let mut dedicated_info = vk::MemoryDedicatedAllocateInfo::builder()
+                .image(image)
+                .build();
+            let alloc_info = vk::MemoryAllocateInfo::builder()
+                .allocation_size(mem_reqs.size)
+                .memory_type_index(mem_type_index)
+                .push_next(&mut dedicated_info);
+
+            let device_memory = unsafe { device.allocate_memory(&alloc_info, None)? };
+            unsafe { device.bind_image_memory(image, device_memory, 0)? };
+
+            let raw_image = crate::vulkan::RafxRawImageVulkan {
+                image,
+                allocation: None,
+            };
+
+            self.inner
+                .external_device_memories
+                .lock()
+                .unwrap()
+                .insert(image, device_memory);
+
+            RafxTextureVulkan::from_existing(self, Some(raw_image), texture_def)
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        Err(RafxError::StringError(
+            "Texture import not supported on this platform".to_string(),
+        ))
+    }
+
+    pub fn create_exportable_timeline_semaphore(
+        &self,
+        initial_value: u64,
+    ) -> RafxResult<crate::vulkan::RafxTimelineSemaphoreVulkan> {
+        #[cfg(target_os = "linux")]
+        {
+            let mut export_info = vk::ExportSemaphoreCreateInfo::builder()
+                .handle_types(vk::ExternalSemaphoreHandleTypeFlags::OPAQUE_FD)
+                .build();
+
+            let mut type_info = vk::SemaphoreTypeCreateInfo::builder()
+                .semaphore_type(vk::SemaphoreType::TIMELINE)
+                .initial_value(initial_value)
+                .build();
+
+            let create_info = vk::SemaphoreCreateInfo::builder()
+                .push_next(&mut type_info)
+                .push_next(&mut export_info)
+                .build();
+
+            let vk_semaphore =
+                unsafe { self.device().create_semaphore(&create_info, None)? };
+
+            Ok(unsafe {
+                crate::vulkan::RafxTimelineSemaphoreVulkan::from_existing(self, vk_semaphore)
+            })
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let mut metal_export_info = vk::ExportMetalObjectCreateInfoEXT::builder()
+                .export_object_type(vk::ExportMetalObjectTypeFlagsEXT::METAL_SHARED_EVENT)
+                .build();
+
+            let mut type_info = vk::SemaphoreTypeCreateInfo::builder()
+                .semaphore_type(vk::SemaphoreType::TIMELINE)
+                .initial_value(initial_value)
+                .build();
+
+            let create_info = vk::SemaphoreCreateInfo::builder()
+                .push_next(&mut type_info)
+                .push_next(&mut metal_export_info)
+                .build();
+
+            let vk_semaphore =
+                unsafe { self.device().create_semaphore(&create_info, None)? };
+
+            Ok(unsafe {
+                crate::vulkan::RafxTimelineSemaphoreVulkan::from_existing(self, vk_semaphore)
+            })
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        Err(RafxError::StringError(
+            "Exportable timeline semaphores not supported on this platform".to_string(),
+        ))
+    }
+
+    pub fn export_timeline_semaphore_handle(
+        &self,
+        semaphore: &crate::vulkan::RafxTimelineSemaphoreVulkan,
+    ) -> RafxResult<crate::RafxExternalSemaphoreHandle> {
+        #[cfg(target_os = "linux")]
+        {
+            let fd_loader =
+                ash::extensions::khr::ExternalSemaphoreFd::new(self.instance(), self.device());
+            let fd_info = vk::SemaphoreGetFdInfoKHR::builder()
+                .semaphore(semaphore.vk_semaphore())
+                .handle_type(vk::ExternalSemaphoreHandleTypeFlags::OPAQUE_FD);
+            let fd = unsafe { fd_loader.get_semaphore_fd(&fd_info)? };
+            Ok(crate::RafxExternalSemaphoreHandle::Fd(fd))
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let metal_objects_fn = vk::ExtMetalObjectsFn::load(|name| unsafe {
+                std::mem::transmute(
+                    self.instance()
+                        .get_device_proc_addr(self.device().handle(), name.as_ptr()),
+                )
+            });
+
+            let mut shared_event_info = vk::ExportMetalSharedEventInfoEXT::builder()
+                .semaphore(semaphore.vk_semaphore())
+                .build();
+            let mut export_info = vk::ExportMetalObjectsInfoEXT::builder()
+                .push_next(&mut shared_event_info)
+                .build();
+
+            eprintln!("  calling vkExportMetalObjectsEXT for semaphore...");
+            unsafe {
+                (metal_objects_fn.export_metal_objects_ext)(self.device().handle(), &mut export_info)
+            };
+            eprintln!("  vkExportMetalObjectsEXT returned, mtl_shared_event={:?}", shared_event_info.mtl_shared_event);
+
+            if shared_event_info.mtl_shared_event.is_null() {
+                return Err(RafxError::StringError(
+                    "Failed to export MTLSharedEvent".to_string(),
+                ));
+            }
+
+            // Get the machPort for cross-process sharing
+            let mach_port = get_shared_event_mach_port(shared_event_info.mtl_shared_event)?;
+            eprintln!("  got machPort={}", mach_port);
+            Ok(crate::RafxExternalSemaphoreHandle::MachPort(mach_port))
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        Err(RafxError::StringError(
+            "Timeline semaphore export not supported on this platform".to_string(),
+        ))
+    }
+
+    pub fn import_timeline_semaphore(
+        &self,
+        handle: crate::RafxExternalSemaphoreHandle,
+    ) -> RafxResult<crate::vulkan::RafxTimelineSemaphoreVulkan> {
+        #[cfg(target_os = "linux")]
+        {
+            let crate::RafxExternalSemaphoreHandle::Fd(fd) = handle else {
+                return Err(RafxError::StringError(
+                    "Expected Fd handle on Linux".to_string(),
+                ));
+            };
+
+            // Create a timeline semaphore and import the fd
+            let mut type_info = vk::SemaphoreTypeCreateInfo::builder()
+                .semaphore_type(vk::SemaphoreType::TIMELINE)
+                .initial_value(0)
+                .build();
+            let create_info = vk::SemaphoreCreateInfo::builder()
+                .push_next(&mut type_info)
+                .build();
+            let vk_semaphore =
+                unsafe { self.device().create_semaphore(&create_info, None)? };
+
+            let fd_loader =
+                ash::extensions::khr::ExternalSemaphoreFd::new(self.instance(), self.device());
+            let import_info = vk::ImportSemaphoreFdInfoKHR::builder()
+                .semaphore(vk_semaphore)
+                .handle_type(vk::ExternalSemaphoreHandleTypeFlags::OPAQUE_FD)
+                .fd(fd);
+            unsafe { fd_loader.import_semaphore_fd(&import_info)? };
+
+            Ok(unsafe {
+                crate::vulkan::RafxTimelineSemaphoreVulkan::from_existing(self, vk_semaphore)
+            })
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let crate::RafxExternalSemaphoreHandle::MachPort(mach_port) = handle else {
+                return Err(RafxError::StringError(
+                    "Expected MachPort handle on macOS".to_string(),
+                ));
+            };
+
+            let mtl_shared_event = create_shared_event_from_mach_port(mach_port)?;
+
+            let mut import_event = vk::ImportMetalSharedEventInfoEXT::builder()
+                .mtl_shared_event(mtl_shared_event)
+                .build();
+            let mut type_info = vk::SemaphoreTypeCreateInfo::builder()
+                .semaphore_type(vk::SemaphoreType::TIMELINE)
+                .initial_value(0)
+                .build();
+            let create_info = vk::SemaphoreCreateInfo::builder()
+                .push_next(&mut type_info)
+                .push_next(&mut import_event)
+                .build();
+
+            let vk_semaphore =
+                unsafe { self.device().create_semaphore(&create_info, None)? };
+
+            Ok(unsafe {
+                crate::vulkan::RafxTimelineSemaphoreVulkan::from_existing(self, vk_semaphore)
+            })
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        Err(RafxError::StringError(
+            "Timeline semaphore import not supported on this platform".to_string(),
+        ))
+    }
 
     pub fn find_supported_format(
         &self,
@@ -809,12 +1412,144 @@ fn find_queue_families(
     }
 }
 
+fn find_memory_type(
+    device_context: &RafxDeviceContextVulkan,
+    type_filter: u32,
+    properties: vk::MemoryPropertyFlags,
+) -> RafxResult<u32> {
+    let mem_properties = unsafe {
+        device_context
+            .instance()
+            .get_physical_device_memory_properties(device_context.physical_device())
+    };
+    for i in 0..mem_properties.memory_type_count {
+        if (type_filter & (1 << i)) != 0
+            && mem_properties.memory_types[i as usize]
+                .property_flags
+                .contains(properties)
+        {
+            return Ok(i);
+        }
+    }
+    Err(RafxError::StringError(
+        "Failed to find suitable memory type".to_string(),
+    ))
+}
+
+// IOSurface FFI (macOS)
+#[cfg(target_os = "macos")]
+#[link(name = "IOSurface", kind = "framework")]
+extern "C" {
+    fn IOSurfaceGetID(surface: vk::IOSurfaceRef) -> u32;
+    fn IOSurfaceLookup(surface_id: u32) -> vk::IOSurfaceRef;
+}
+
+// Cross-process MTLSharedEvent sharing via machPort (macOS 13+).
+//
+// IMPORTANT: On ARM64, objc_msgSend uses the standard (non-variadic) calling convention.
+// We must use typed function pointers so arguments are passed in registers.
+#[cfg(target_os = "macos")]
+fn get_shared_event_mach_port(
+    mtl_shared_event: vk::MTLSharedEvent_id,
+) -> RafxResult<u32> {
+    use std::ffi::c_void;
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_msgSend();
+        fn sel_registerName(name: *const u8) -> *mut c_void;
+        fn class_getName(cls: *mut c_void) -> *const u8;
+        fn object_getClass(obj: *mut c_void) -> *mut c_void;
+    }
+
+    type MsgSendObj = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
+    type MsgSendBool = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> bool;
+    type MsgSendU32 = unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32;
+
+    unsafe {
+        let send_obj: MsgSendObj =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let send_bool: MsgSendBool =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let send_u32: MsgSendU32 =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+
+        // Log the actual ObjC class of the shared event
+        let cls = object_getClass(mtl_shared_event);
+        let cls_name = class_getName(cls);
+        let cls_str = std::ffi::CStr::from_ptr(cls_name as *const _).to_string_lossy();
+        eprintln!("    MTLSharedEvent class: {}", cls_str);
+
+        // Check if the object responds to machPort
+        let sel_responds = sel_registerName(b"respondsToSelector:\0".as_ptr());
+        let sel_mach_port = sel_registerName(b"machPort\0".as_ptr());
+        let responds = send_bool(mtl_shared_event, sel_responds, sel_mach_port);
+        eprintln!("    respondsToSelector:machPort = {}", responds);
+
+        if !responds {
+            return Err(RafxError::StringError(
+                "MTLSharedEvent does not respond to machPort (macOS 13+ required)".to_string(),
+            ));
+        }
+
+        let port = send_u32(mtl_shared_event, sel_mach_port);
+        if port == 0 {
+            return Err(RafxError::StringError(
+                "MTLSharedEvent.machPort returned MACH_PORT_NULL".to_string(),
+            ));
+        }
+        Ok(port)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn create_shared_event_from_mach_port(
+    mach_port: u32,
+) -> RafxResult<vk::MTLSharedEvent_id> {
+    use std::ffi::c_void;
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_msgSend();
+        fn sel_registerName(name: *const u8) -> *mut c_void;
+    }
+
+    #[link(name = "Metal", kind = "framework")]
+    extern "C" {
+        fn MTLCreateSystemDefaultDevice() -> *mut c_void;
+    }
+
+    // [device newSharedEventWithMachPort:] takes u32, returns id<MTLSharedEvent>
+    type MsgSendPort = unsafe extern "C" fn(*mut c_void, *mut c_void, u32) -> *mut c_void;
+
+    unsafe {
+        let device = MTLCreateSystemDefaultDevice();
+        if device.is_null() {
+            return Err(RafxError::StringError(
+                "MTLCreateSystemDefaultDevice returned null".to_string(),
+            ));
+        }
+
+        let send_port: MsgSendPort =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let sel = sel_registerName(b"newSharedEventWithMachPort:\0".as_ptr());
+        let event = send_port(device, sel, mach_port);
+        if event.is_null() {
+            return Err(RafxError::StringError(format!(
+                "newSharedEventWithMachPort({mach_port}) returned null"
+            )));
+        }
+        Ok(event)
+    }
+}
+
 fn create_logical_device(
     instance: &ash::Instance,
     physical_device: ash::vk::PhysicalDevice,
     physical_device_info: &PhysicalDeviceInfo,
     queue_requirements: &VkQueueRequirements,
     physical_device_features: &Option<vk::PhysicalDeviceFeatures>,
+    additional_device_extensions: &[CString],
 ) -> RafxResult<ash::Device> {
     //TODO: Ideally we would set up validation layers for the logical device too.
 
@@ -838,6 +1573,10 @@ fn create_logical_device(
                 break;
             }
         }
+    }
+
+    for ext in additional_device_extensions {
+        device_extension_names.push(ext.as_ptr());
     }
 
     // If no features were specified, enable a few that are very widely supported features.
@@ -867,10 +1606,25 @@ fn create_logical_device(
         })
         .collect();
 
-    let device_create_info = vk::DeviceCreateInfo::builder()
+    // Check if timeline semaphore extension was requested
+    let timeline_semaphore_ext_name =
+        CStr::from_bytes_with_nul(b"VK_KHR_timeline_semaphore\0").unwrap();
+    let needs_timeline_semaphore = additional_device_extensions
+        .iter()
+        .any(|ext| ext.as_c_str() == timeline_semaphore_ext_name);
+
+    let mut timeline_semaphore_features = vk::PhysicalDeviceTimelineSemaphoreFeatures::builder()
+        .timeline_semaphore(true)
+        .build();
+
+    let mut device_create_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_infos)
         .enabled_extension_names(&device_extension_names)
         .enabled_features(&physical_device_features);
+
+    if needs_timeline_semaphore {
+        device_create_info = device_create_info.push_next(&mut timeline_semaphore_features);
+    }
 
     let device: ash::Device =
         unsafe { instance.create_device(physical_device, &device_create_info, None)? };

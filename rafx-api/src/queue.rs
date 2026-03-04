@@ -22,6 +22,7 @@ use crate::vulkan::RafxQueueVulkan;
 use crate::{
     RafxCommandBuffer, RafxCommandPool, RafxCommandPoolDef, RafxDeviceContext, RafxFence,
     RafxPresentSuccessResult, RafxQueueType, RafxResult, RafxSemaphore, RafxSwapchain,
+    RafxTimelineSemaphore,
 };
 
 /// A queue allows work to be submitted to the GPU
@@ -427,6 +428,67 @@ impl RafxQueue {
                     image_index,
                 )
             }
+        }
+    }
+
+    /// Submit command buffers with timeline semaphore waits and signals.
+    /// Binary semaphores and fences work alongside timeline semaphores.
+    /// Currently only supported on Vulkan.
+    pub fn submit_with_timeline(
+        &self,
+        command_buffers: &[&RafxCommandBuffer],
+        wait_binary: &[&RafxSemaphore],
+        signal_binary: &[&RafxSemaphore],
+        wait_timeline: &[(&RafxTimelineSemaphore, u64)],
+        signal_timeline: &[(&RafxTimelineSemaphore, u64)],
+        signal_fence: Option<&RafxFence>,
+    ) -> RafxResult<()> {
+        match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxQueue::Vk(inner) => {
+                let command_buffers: Vec<_> = command_buffers
+                    .iter()
+                    .map(|x| x.vk_command_buffer().unwrap())
+                    .collect();
+                let wait_binary: Vec<_> = wait_binary
+                    .iter()
+                    .map(|x| x.vk_semaphore().unwrap())
+                    .collect();
+                let signal_binary: Vec<_> = signal_binary
+                    .iter()
+                    .map(|x| x.vk_semaphore().unwrap())
+                    .collect();
+                let wait_timeline: Vec<_> = wait_timeline
+                    .iter()
+                    .map(|(s, v)| {
+                        crate::vulkan::TimelineSemaphoreSubmit {
+                            semaphore: s.vk_timeline_semaphore().unwrap(),
+                            value: *v,
+                        }
+                    })
+                    .collect();
+                let signal_timeline: Vec<_> = signal_timeline
+                    .iter()
+                    .map(|(s, v)| {
+                        crate::vulkan::TimelineSemaphoreSubmit {
+                            semaphore: s.vk_timeline_semaphore().unwrap(),
+                            value: *v,
+                        }
+                    })
+                    .collect();
+                inner.submit_with_timeline(
+                    &command_buffers,
+                    &wait_binary,
+                    &signal_binary,
+                    &wait_timeline,
+                    &signal_timeline,
+                    signal_fence.map(|x| x.vk_fence().unwrap()),
+                )
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(crate::RafxError::StringError(
+                "submit_with_timeline is not supported on this backend".to_string(),
+            )),
         }
     }
 

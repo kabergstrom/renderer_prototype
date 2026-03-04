@@ -303,6 +303,137 @@ impl RafxDeviceContext {
         })
     }
 
+    /// Create a timeline semaphore with the given initial value.
+    /// Currently only supported on Vulkan (requires VK_KHR_timeline_semaphore).
+    pub fn create_timeline_semaphore(
+        &self,
+        initial_value: u64,
+    ) -> RafxResult<RafxTimelineSemaphore> {
+        Ok(match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => RafxTimelineSemaphore::Vk(
+                crate::vulkan::RafxTimelineSemaphoreVulkan::new(inner, initial_value)?,
+            ),
+            #[allow(unreachable_patterns)]
+            _ => {
+                return Err(crate::RafxError::StringError(
+                    "Timeline semaphores are not supported on this backend".to_string(),
+                ));
+            }
+        })
+    }
+
+    /// Create a texture backed by exportable memory (for cross-process sharing).
+    /// Currently only supported on Vulkan.
+    pub fn create_exportable_texture(
+        &self,
+        texture_def: &RafxTextureDef,
+    ) -> RafxResult<RafxTexture> {
+        Ok(match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => {
+                RafxTexture::Vk(inner.create_exportable_texture(texture_def)?)
+            }
+            #[allow(unreachable_patterns)]
+            _ => {
+                return Err(crate::RafxError::StringError(
+                    "Exportable textures are not supported on this backend".to_string(),
+                ));
+            }
+        })
+    }
+
+    /// Export a platform-specific handle from a texture created with create_exportable_texture.
+    pub fn export_texture_handle(
+        &self,
+        texture: &RafxTexture,
+    ) -> RafxResult<RafxExternalTextureHandle> {
+        match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => {
+                inner.export_texture_handle(texture.vk_texture().unwrap())
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(crate::RafxError::StringError(
+                "Texture export is not supported on this backend".to_string(),
+            )),
+        }
+    }
+
+    /// Import a texture from a platform-specific handle (from another process).
+    pub fn import_texture(
+        &self,
+        texture_def: &RafxTextureDef,
+        handle: RafxExternalTextureHandle,
+    ) -> RafxResult<RafxTexture> {
+        Ok(match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => {
+                RafxTexture::Vk(inner.import_texture(texture_def, handle)?)
+            }
+            #[allow(unreachable_patterns)]
+            _ => {
+                return Err(crate::RafxError::StringError(
+                    "Texture import is not supported on this backend".to_string(),
+                ));
+            }
+        })
+    }
+
+    /// Create a timeline semaphore that can be exported for cross-process sharing.
+    pub fn create_exportable_timeline_semaphore(
+        &self,
+        initial_value: u64,
+    ) -> RafxResult<RafxTimelineSemaphore> {
+        Ok(match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => RafxTimelineSemaphore::Vk(
+                inner.create_exportable_timeline_semaphore(initial_value)?,
+            ),
+            #[allow(unreachable_patterns)]
+            _ => {
+                return Err(crate::RafxError::StringError(
+                    "Exportable timeline semaphores are not supported on this backend".to_string(),
+                ));
+            }
+        })
+    }
+
+    /// Export a platform-specific handle from a timeline semaphore.
+    pub fn export_timeline_semaphore_handle(
+        &self,
+        semaphore: &RafxTimelineSemaphore,
+    ) -> RafxResult<RafxExternalSemaphoreHandle> {
+        match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => inner
+                .export_timeline_semaphore_handle(semaphore.vk_timeline_semaphore().unwrap()),
+            #[allow(unreachable_patterns)]
+            _ => Err(crate::RafxError::StringError(
+                "Timeline semaphore export is not supported on this backend".to_string(),
+            )),
+        }
+    }
+
+    /// Import a timeline semaphore from a platform-specific handle.
+    pub fn import_timeline_semaphore(
+        &self,
+        handle: RafxExternalSemaphoreHandle,
+    ) -> RafxResult<RafxTimelineSemaphore> {
+        Ok(match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => {
+                RafxTimelineSemaphore::Vk(inner.import_timeline_semaphore(handle)?)
+            }
+            #[allow(unreachable_patterns)]
+            _ => {
+                return Err(crate::RafxError::StringError(
+                    "Timeline semaphore import is not supported on this backend".to_string(),
+                ));
+            }
+        })
+    }
+
     /// Create a swapchain
     pub fn create_swapchain(
         &self,
