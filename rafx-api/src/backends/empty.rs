@@ -558,6 +558,19 @@ impl RafxFenceEmpty {
 
 pub struct RafxSemaphoreEmpty;
 
+pub struct RafxTimelineSemaphoreEmpty;
+impl RafxTimelineSemaphoreEmpty {
+    pub fn value(&self) -> RafxResult<u64> {
+        unimplemented!();
+    }
+    pub fn wait(&self, _value: u64, _timeout_ns: u64) -> RafxResult<()> {
+        unimplemented!();
+    }
+    pub fn signal(&self, _value: u64) -> RafxResult<()> {
+        unimplemented!();
+    }
+}
+
 //
 // Swapchain
 //
