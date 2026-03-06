@@ -929,8 +929,15 @@ impl RafxDeviceContextVulkan {
 
         #[cfg(target_os = "macos")]
         {
-            let mut metal_export_info = vk::ExportMetalObjectCreateInfoEXT::builder()
-                .export_object_type(vk::ExportMetalObjectTypeFlagsEXT::METAL_SHARED_EVENT)
+            // Create MTLSharedEvent directly via Metal API so we get a real
+            // system object that supports machPort for cross-process sharing.
+            // Get machPort NOW (before MoltenVK can wrap/replace the object),
+            // then import the event into MoltenVK.
+            let mtl_shared_event = create_mtl_shared_event()?;
+            let mach_port = get_shared_event_mach_port(mtl_shared_event)?;
+
+            let mut import_event = vk::ImportMetalSharedEventInfoEXT::builder()
+                .mtl_shared_event(mtl_shared_event)
                 .build();
 
             let mut type_info = vk::SemaphoreTypeCreateInfo::builder()
@@ -940,15 +947,17 @@ impl RafxDeviceContextVulkan {
 
             let create_info = vk::SemaphoreCreateInfo::builder()
                 .push_next(&mut type_info)
-                .push_next(&mut metal_export_info)
+                .push_next(&mut import_event)
                 .build();
 
             let vk_semaphore =
                 unsafe { self.device().create_semaphore(&create_info, None)? };
 
-            Ok(unsafe {
+            let mut sem = unsafe {
                 crate::vulkan::RafxTimelineSemaphoreVulkan::from_existing(self, vk_semaphore)
-            })
+            };
+            sem.mach_port = Some(mach_port);
+            Ok(sem)
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -974,35 +983,13 @@ impl RafxDeviceContextVulkan {
 
         #[cfg(target_os = "macos")]
         {
-            let metal_objects_fn = vk::ExtMetalObjectsFn::load(|name| unsafe {
-                std::mem::transmute(
-                    self.instance()
-                        .get_device_proc_addr(self.device().handle(), name.as_ptr()),
+            // machPort was obtained during create_exportable_timeline_semaphore
+            // from the Metal-created MTLSharedEvent (before MoltenVK import).
+            let mach_port = semaphore.mach_port.ok_or_else(|| {
+                RafxError::StringError(
+                    "Timeline semaphore has no stored machPort (was it created with create_exportable_timeline_semaphore?)".to_string(),
                 )
-            });
-
-            let mut shared_event_info = vk::ExportMetalSharedEventInfoEXT::builder()
-                .semaphore(semaphore.vk_semaphore())
-                .build();
-            let mut export_info = vk::ExportMetalObjectsInfoEXT::builder()
-                .push_next(&mut shared_event_info)
-                .build();
-
-            eprintln!("  calling vkExportMetalObjectsEXT for semaphore...");
-            unsafe {
-                (metal_objects_fn.export_metal_objects_ext)(self.device().handle(), &mut export_info)
-            };
-            eprintln!("  vkExportMetalObjectsEXT returned, mtl_shared_event={:?}", shared_event_info.mtl_shared_event);
-
-            if shared_event_info.mtl_shared_event.is_null() {
-                return Err(RafxError::StringError(
-                    "Failed to export MTLSharedEvent".to_string(),
-                ));
-            }
-
-            // Get the machPort for cross-process sharing
-            let mach_port = get_shared_event_mach_port(shared_event_info.mtl_shared_event)?;
-            eprintln!("  got machPort={}", mach_port);
+            })?;
             Ok(crate::RafxExternalSemaphoreHandle::MachPort(mach_port))
         }
 
@@ -1444,7 +1431,51 @@ extern "C" {
     fn IOSurfaceLookup(surface_id: u32) -> vk::IOSurfaceRef;
 }
 
-// Cross-process MTLSharedEvent sharing via machPort (macOS 13+).
+/// Create an MTLSharedEvent directly via the Metal API.
+/// This produces a real system MTLSharedEvent that supports machPort,
+/// unlike the one MoltenVK creates internally via vkExportMetalObjectsEXT.
+#[cfg(target_os = "macos")]
+fn create_mtl_shared_event() -> RafxResult<vk::MTLSharedEvent_id> {
+    use std::ffi::c_void;
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_msgSend();
+        fn sel_registerName(name: *const u8) -> *mut c_void;
+    }
+
+    #[link(name = "Metal", kind = "framework")]
+    extern "C" {
+        fn MTLCreateSystemDefaultDevice() -> *mut c_void;
+    }
+
+    type MsgSendObj = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
+
+    unsafe {
+        let device = MTLCreateSystemDefaultDevice();
+        if device.is_null() {
+            return Err(RafxError::StringError(
+                "MTLCreateSystemDefaultDevice returned null".to_string(),
+            ));
+        }
+
+        let send_obj: MsgSendObj =
+            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let sel = sel_registerName(b"newSharedEvent\0".as_ptr());
+        let event = send_obj(device, sel);
+        if event.is_null() {
+            return Err(RafxError::StringError(
+                "MTLDevice.newSharedEvent returned null".to_string(),
+            ));
+        }
+        Ok(event)
+    }
+}
+
+// Cross-process MTLSharedEvent sharing via Mach port.
+//
+// The MTLSharedEvent protocol has no `machPort` getter. Instead we go through
+// MTLSharedEventHandle: [event newSharedEventHandle] → [handle eventPort].
 //
 // IMPORTANT: On ARM64, objc_msgSend uses the standard (non-variadic) calling convention.
 // We must use typed function pointers so arguments are passed in registers.
@@ -1458,44 +1489,38 @@ fn get_shared_event_mach_port(
     extern "C" {
         fn objc_msgSend();
         fn sel_registerName(name: *const u8) -> *mut c_void;
-        fn class_getName(cls: *mut c_void) -> *const u8;
-        fn object_getClass(obj: *mut c_void) -> *mut c_void;
     }
 
     type MsgSendObj = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
-    type MsgSendBool = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> bool;
     type MsgSendU32 = unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32;
 
     unsafe {
         let send_obj: MsgSendObj =
             std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-        let send_bool: MsgSendBool =
-            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         let send_u32: MsgSendU32 =
             std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
 
-        // Log the actual ObjC class of the shared event
-        let cls = object_getClass(mtl_shared_event);
-        let cls_name = class_getName(cls);
-        let cls_str = std::ffi::CStr::from_ptr(cls_name as *const _).to_string_lossy();
-        eprintln!("    MTLSharedEvent class: {}", cls_str);
-
-        // Check if the object responds to machPort
-        let sel_responds = sel_registerName(b"respondsToSelector:\0".as_ptr());
-        let sel_mach_port = sel_registerName(b"machPort\0".as_ptr());
-        let responds = send_bool(mtl_shared_event, sel_responds, sel_mach_port);
-        eprintln!("    respondsToSelector:machPort = {}", responds);
-
-        if !responds {
+        // [event newSharedEventHandle] → MTLSharedEventHandle*
+        let sel_new_handle = sel_registerName(b"newSharedEventHandle\0".as_ptr());
+        let handle = send_obj(mtl_shared_event, sel_new_handle);
+        if handle.is_null() {
             return Err(RafxError::StringError(
-                "MTLSharedEvent does not respond to machPort (macOS 13+ required)".to_string(),
+                "MTLSharedEvent.newSharedEventHandle returned nil".to_string(),
             ));
         }
 
-        let port = send_u32(mtl_shared_event, sel_mach_port);
+        // [handle eventPort] → uint32_t (Mach port send right)
+        let sel_event_port = sel_registerName(b"eventPort\0".as_ptr());
+        let port = send_u32(handle, sel_event_port);
+
+        // Don't release the handle — it owns the Mach send right.
+        // If we release it, the send right is deallocated, leaving a dead name.
+        // The handle is leaked intentionally; it's a small object and the
+        // semaphore lives for the lifetime of the process.
+
         if port == 0 {
             return Err(RafxError::StringError(
-                "MTLSharedEvent.machPort returned MACH_PORT_NULL".to_string(),
+                "MTLSharedEventHandle.eventPort returned MACH_PORT_NULL".to_string(),
             ));
         }
         Ok(port)

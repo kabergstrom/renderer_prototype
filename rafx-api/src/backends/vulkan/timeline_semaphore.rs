@@ -7,6 +7,10 @@ use ash::vk;
 pub struct RafxTimelineSemaphoreVulkan {
     device_context: RafxDeviceContextVulkan,
     vk_semaphore: vk::Semaphore,
+    /// On macOS, stores the Mach port for cross-process sharing.
+    /// Set during create_exportable_timeline_semaphore, read by export_timeline_semaphore_handle.
+    #[cfg(target_os = "macos")]
+    pub(crate) mach_port: Option<u32>,
 }
 
 impl Drop for RafxTimelineSemaphoreVulkan {
@@ -43,6 +47,8 @@ impl RafxTimelineSemaphoreVulkan {
         Ok(Self {
             device_context: device_context.clone(),
             vk_semaphore,
+            #[cfg(target_os = "macos")]
+            mach_port: None,
         })
     }
 
@@ -59,6 +65,8 @@ impl RafxTimelineSemaphoreVulkan {
         Self {
             device_context: device_context.clone(),
             vk_semaphore,
+            #[cfg(target_os = "macos")]
+            mach_port: None,
         }
     }
 

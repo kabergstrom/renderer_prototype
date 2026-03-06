@@ -32,7 +32,7 @@ impl Default for RafxDescriptorHeapPoolConfig {
             uniform_buffers: 8192,
             storage_buffers: 1024,
             dynamic_uniform_buffers: 1024,
-            dynamic_storage_buffers: 0,
+            dynamic_storage_buffers: 1024,
             input_attachments: 0,
         }
     }
