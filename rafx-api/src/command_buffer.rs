@@ -595,7 +595,7 @@ impl RafxCommandBuffer {
         root_signature: &RafxRootSignature,
         set_index: u32,
         descriptor_set_handle: &RafxDescriptorSetHandle,
-        dynamic_offsets: &[u32],
+        _dynamic_offsets: &[u32],
     ) -> RafxResult<()> {
         match self {
             #[cfg(feature = "rafx-dx12")]
@@ -603,14 +603,14 @@ impl RafxCommandBuffer {
                 root_signature.dx12_root_signature().unwrap(),
                 set_index,
                 descriptor_set_handle.dx12_descriptor_set_handle().unwrap(),
-                dynamic_offsets,
+                _dynamic_offsets,
             ),
             #[cfg(feature = "rafx-vulkan")]
             RafxCommandBuffer::Vk(inner) => inner.cmd_bind_descriptor_set_handle_dynamic(
                 root_signature.vk_root_signature().unwrap(),
                 set_index,
                 descriptor_set_handle.vk_descriptor_set_handle().unwrap(),
-                dynamic_offsets,
+                _dynamic_offsets,
             ),
             #[cfg(feature = "rafx-metal")]
             RafxCommandBuffer::Metal(inner) => inner.cmd_bind_descriptor_set_handle(

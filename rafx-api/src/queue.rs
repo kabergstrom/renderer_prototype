@@ -435,36 +435,36 @@ impl RafxQueue {
     /// Binary semaphores and fences work alongside timeline semaphores.
     pub fn submit_with_timeline(
         &self,
-        command_buffers: &[&RafxCommandBuffer],
-        wait_binary: &[&RafxSemaphore],
-        signal_binary: &[&RafxSemaphore],
-        wait_timeline: &[(&RafxTimelineSemaphore, u64)],
-        signal_timeline: &[(&RafxTimelineSemaphore, u64)],
-        signal_fence: Option<&RafxFence>,
+        _command_buffers: &[&RafxCommandBuffer],
+        _wait_binary: &[&RafxSemaphore],
+        _signal_binary: &[&RafxSemaphore],
+        _wait_timeline: &[(&RafxTimelineSemaphore, u64)],
+        _signal_timeline: &[(&RafxTimelineSemaphore, u64)],
+        _signal_fence: Option<&RafxFence>,
     ) -> RafxResult<()> {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxQueue::Dx12(inner) => {
-                let command_buffers: Vec<_> = command_buffers
+                let command_buffers: Vec<_> = _command_buffers
                     .iter()
                     .map(|x| x.dx12_command_buffer().unwrap())
                     .collect();
-                let wait_binary: Vec<_> = wait_binary
+                let wait_binary: Vec<_> = _wait_binary
                     .iter()
                     .map(|x| x.dx12_semaphore().unwrap())
                     .collect();
-                let signal_binary: Vec<_> = signal_binary
+                let signal_binary: Vec<_> = _signal_binary
                     .iter()
                     .map(|x| x.dx12_semaphore().unwrap())
                     .collect();
-                let wait_timeline: Vec<_> = wait_timeline
+                let wait_timeline: Vec<_> = _wait_timeline
                     .iter()
                     .map(|(s, v)| crate::dx12::TimelineSemaphoreSubmitDx12 {
                         semaphore: s.dx12_timeline_semaphore().unwrap(),
                         value: *v,
                     })
                     .collect();
-                let signal_timeline: Vec<_> = signal_timeline
+                let signal_timeline: Vec<_> = _signal_timeline
                     .iter()
                     .map(|(s, v)| crate::dx12::TimelineSemaphoreSubmitDx12 {
                         semaphore: s.dx12_timeline_semaphore().unwrap(),
@@ -477,24 +477,24 @@ impl RafxQueue {
                     &signal_binary,
                     &wait_timeline,
                     &signal_timeline,
-                    signal_fence.map(|x| x.dx12_fence().unwrap()),
+                    _signal_fence.map(|x| x.dx12_fence().unwrap()),
                 )
             }
             #[cfg(feature = "rafx-vulkan")]
             RafxQueue::Vk(inner) => {
-                let command_buffers: Vec<_> = command_buffers
+                let command_buffers: Vec<_> = _command_buffers
                     .iter()
                     .map(|x| x.vk_command_buffer().unwrap())
                     .collect();
-                let wait_binary: Vec<_> = wait_binary
+                let wait_binary: Vec<_> = _wait_binary
                     .iter()
                     .map(|x| x.vk_semaphore().unwrap())
                     .collect();
-                let signal_binary: Vec<_> = signal_binary
+                let signal_binary: Vec<_> = _signal_binary
                     .iter()
                     .map(|x| x.vk_semaphore().unwrap())
                     .collect();
-                let wait_timeline: Vec<_> = wait_timeline
+                let wait_timeline: Vec<_> = _wait_timeline
                     .iter()
                     .map(|(s, v)| {
                         crate::vulkan::TimelineSemaphoreSubmit {
@@ -503,7 +503,7 @@ impl RafxQueue {
                         }
                     })
                     .collect();
-                let signal_timeline: Vec<_> = signal_timeline
+                let signal_timeline: Vec<_> = _signal_timeline
                     .iter()
                     .map(|(s, v)| {
                         crate::vulkan::TimelineSemaphoreSubmit {
@@ -518,7 +518,7 @@ impl RafxQueue {
                     &signal_binary,
                     &wait_timeline,
                     &signal_timeline,
-                    signal_fence.map(|x| x.vk_fence().unwrap()),
+                    _signal_fence.map(|x| x.vk_fence().unwrap()),
                 )
             }
             #[allow(unreachable_patterns)]

@@ -166,7 +166,7 @@ impl RafxShaderPackage {
     /// Create a shader module def for use with a GL RafxDevice. Returns none if the package does
     /// not contain data necessary for GL ES 2.0
     #[cfg(feature = "rafx-gles2")]
-    pub fn gles2_module_def(&self) -> Option<RafxShaderModuleDefGles2> {
+    pub fn gles2_module_def(&self) -> Option<RafxShaderModuleDefGles2<'_>> {
         if let Some(gl) = self.gles2.as_ref() {
             Some(match gl {
                 RafxShaderPackageGles2::Src(src) => RafxShaderModuleDefGles2::GlSrc(src),
@@ -179,7 +179,7 @@ impl RafxShaderPackage {
     /// Create a shader module def for use with a GL RafxDevice. Returns none if the package does
     /// not contain data necessary for GL ES 2.0
     #[cfg(feature = "rafx-gles3")]
-    pub fn gles3_module_def(&self) -> Option<RafxShaderModuleDefGles3> {
+    pub fn gles3_module_def(&self) -> Option<RafxShaderModuleDefGles3<'_>> {
         if let Some(gl) = self.gles3.as_ref() {
             Some(match gl {
                 RafxShaderPackageGles3::Src(src) => RafxShaderModuleDefGles3::GlSrc(src),
@@ -192,7 +192,7 @@ impl RafxShaderPackage {
     /// Create a shader module def for use with a dx12 RafxDevice. Returns none if the package does
     /// not contain data necessary for metal
     #[cfg(feature = "rafx-dx12")]
-    pub fn dx12_module_def(&self) -> Option<RafxShaderModuleDefDx12> {
+    pub fn dx12_module_def(&self) -> Option<RafxShaderModuleDefDx12<'_>> {
         if let Some(dx12) = self.dx12.as_ref() {
             Some(match dx12 {
                 RafxShaderPackageDx12::Src(src) => RafxShaderModuleDefDx12::HlslSrc(src),
@@ -206,7 +206,7 @@ impl RafxShaderPackage {
     /// Create a shader module def for use with a metal RafxDevice. Returns none if the package does
     /// not contain data necessary for metal
     #[cfg(feature = "rafx-metal")]
-    pub fn metal_module_def(&self) -> Option<RafxShaderModuleDefMetal> {
+    pub fn metal_module_def(&self) -> Option<RafxShaderModuleDefMetal<'_>> {
         if let Some(metal) = self.metal.as_ref() {
             Some(match metal {
                 RafxShaderPackageMetal::Src(src) => RafxShaderModuleDefMetal::MetalSrc(src),
@@ -222,7 +222,7 @@ impl RafxShaderPackage {
     /// Create a shader module def for use with a vulkan RafxDevice. Returns none if the package
     /// does not contain data necessary for vulkan
     #[cfg(feature = "rafx-vulkan")]
-    pub fn vulkan_module_def(&self) -> Option<RafxShaderModuleDefVulkan> {
+    pub fn vulkan_module_def(&self) -> Option<RafxShaderModuleDefVulkan<'_>> {
         if let Some(vk) = self.vk.as_ref() {
             Some(match vk {
                 RafxShaderPackageVulkan::SpvBytes(bytes) => {
@@ -247,11 +247,11 @@ impl RafxShaderPackage {
         ))
     ))]
     #[doc(hidden)]
-    pub fn empty_module_def(&self) -> Option<RafxShaderModuleDefEmpty> {
+    pub fn empty_module_def(&self) -> Option<RafxShaderModuleDefEmpty<'_>> {
         Some(RafxShaderModuleDefEmpty::Empty(Default::default()))
     }
 
-    pub fn module_def(&self) -> RafxShaderModuleDef {
+    pub fn module_def(&self) -> RafxShaderModuleDef<'_> {
         RafxShaderModuleDef {
             #[cfg(feature = "rafx-gles2")]
             gles2: self.gles2_module_def(),

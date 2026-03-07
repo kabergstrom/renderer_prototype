@@ -304,18 +304,19 @@ impl RafxDeviceContext {
     }
 
     /// Create a timeline semaphore with the given initial value.
+    #[allow(unreachable_code)]
     pub fn create_timeline_semaphore(
         &self,
-        initial_value: u64,
+        _initial_value: u64,
     ) -> RafxResult<RafxTimelineSemaphore> {
         Ok(match self {
             #[cfg(feature = "rafx-dx12")]
             RafxDeviceContext::Dx12(inner) => RafxTimelineSemaphore::Dx12(
-                crate::dx12::RafxTimelineSemaphoreDx12::new(inner, initial_value)?,
+                crate::dx12::RafxTimelineSemaphoreDx12::new(inner, _initial_value)?,
             ),
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => RafxTimelineSemaphore::Vk(
-                crate::vulkan::RafxTimelineSemaphoreVulkan::new(inner, initial_value)?,
+                crate::vulkan::RafxTimelineSemaphoreVulkan::new(inner, _initial_value)?,
             ),
             #[allow(unreachable_patterns)]
             _ => {
@@ -327,18 +328,19 @@ impl RafxDeviceContext {
     }
 
     /// Create a texture backed by exportable memory (for cross-process sharing).
+    #[allow(unreachable_code)]
     pub fn create_exportable_texture(
         &self,
-        texture_def: &RafxTextureDef,
+        _texture_def: &RafxTextureDef,
     ) -> RafxResult<RafxTexture> {
         Ok(match self {
             #[cfg(feature = "rafx-dx12")]
             RafxDeviceContext::Dx12(inner) => {
-                RafxTexture::Dx12(inner.create_exportable_texture(texture_def)?)
+                RafxTexture::Dx12(inner.create_exportable_texture(_texture_def)?)
             }
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => {
-                RafxTexture::Vk(inner.create_exportable_texture(texture_def)?)
+                RafxTexture::Vk(inner.create_exportable_texture(_texture_def)?)
             }
             #[allow(unreachable_patterns)]
             _ => {
@@ -352,16 +354,16 @@ impl RafxDeviceContext {
     /// Export a platform-specific handle from a texture created with create_exportable_texture.
     pub fn export_texture_handle(
         &self,
-        texture: &RafxTexture,
+        _texture: &RafxTexture,
     ) -> RafxResult<RafxExternalTextureHandle> {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxDeviceContext::Dx12(inner) => {
-                inner.export_texture_handle(texture.dx12_texture().unwrap())
+                inner.export_texture_handle(_texture.dx12_texture().unwrap())
             }
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => {
-                inner.export_texture_handle(texture.vk_texture().unwrap())
+                inner.export_texture_handle(_texture.vk_texture().unwrap())
             }
             #[allow(unreachable_patterns)]
             _ => Err(crate::RafxError::StringError(
@@ -371,19 +373,20 @@ impl RafxDeviceContext {
     }
 
     /// Import a texture from a platform-specific handle (from another process).
+    #[allow(unreachable_code)]
     pub fn import_texture(
         &self,
-        texture_def: &RafxTextureDef,
-        handle: RafxExternalTextureHandle,
+        _texture_def: &RafxTextureDef,
+        _handle: RafxExternalTextureHandle,
     ) -> RafxResult<RafxTexture> {
         Ok(match self {
             #[cfg(feature = "rafx-dx12")]
             RafxDeviceContext::Dx12(inner) => {
-                RafxTexture::Dx12(inner.import_texture(texture_def, handle)?)
+                RafxTexture::Dx12(inner.import_texture(_texture_def, _handle)?)
             }
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => {
-                RafxTexture::Vk(inner.import_texture(texture_def, handle)?)
+                RafxTexture::Vk(inner.import_texture(_texture_def, _handle)?)
             }
             #[allow(unreachable_patterns)]
             _ => {
@@ -395,18 +398,19 @@ impl RafxDeviceContext {
     }
 
     /// Create a timeline semaphore that can be exported for cross-process sharing.
+    #[allow(unreachable_code)]
     pub fn create_exportable_timeline_semaphore(
         &self,
-        initial_value: u64,
+        _initial_value: u64,
     ) -> RafxResult<RafxTimelineSemaphore> {
         Ok(match self {
             #[cfg(feature = "rafx-dx12")]
             RafxDeviceContext::Dx12(inner) => RafxTimelineSemaphore::Dx12(
-                inner.create_exportable_timeline_semaphore(initial_value)?,
+                inner.create_exportable_timeline_semaphore(_initial_value)?,
             ),
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => RafxTimelineSemaphore::Vk(
-                inner.create_exportable_timeline_semaphore(initial_value)?,
+                inner.create_exportable_timeline_semaphore(_initial_value)?,
             ),
             #[allow(unreachable_patterns)]
             _ => {
@@ -420,15 +424,15 @@ impl RafxDeviceContext {
     /// Export a platform-specific handle from a timeline semaphore.
     pub fn export_timeline_semaphore_handle(
         &self,
-        semaphore: &RafxTimelineSemaphore,
+        _semaphore: &RafxTimelineSemaphore,
     ) -> RafxResult<RafxExternalSemaphoreHandle> {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxDeviceContext::Dx12(inner) => inner
-                .export_timeline_semaphore_handle(semaphore.dx12_timeline_semaphore().unwrap()),
+                .export_timeline_semaphore_handle(_semaphore.dx12_timeline_semaphore().unwrap()),
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => inner
-                .export_timeline_semaphore_handle(semaphore.vk_timeline_semaphore().unwrap()),
+                .export_timeline_semaphore_handle(_semaphore.vk_timeline_semaphore().unwrap()),
             #[allow(unreachable_patterns)]
             _ => Err(crate::RafxError::StringError(
                 "Timeline semaphore export is not supported on this backend".to_string(),
@@ -437,18 +441,19 @@ impl RafxDeviceContext {
     }
 
     /// Import a timeline semaphore from a platform-specific handle.
+    #[allow(unreachable_code)]
     pub fn import_timeline_semaphore(
         &self,
-        handle: RafxExternalSemaphoreHandle,
+        _handle: RafxExternalSemaphoreHandle,
     ) -> RafxResult<RafxTimelineSemaphore> {
         Ok(match self {
             #[cfg(feature = "rafx-dx12")]
             RafxDeviceContext::Dx12(inner) => {
-                RafxTimelineSemaphore::Dx12(inner.import_timeline_semaphore(handle)?)
+                RafxTimelineSemaphore::Dx12(inner.import_timeline_semaphore(_handle)?)
             }
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => {
-                RafxTimelineSemaphore::Vk(inner.import_timeline_semaphore(handle)?)
+                RafxTimelineSemaphore::Vk(inner.import_timeline_semaphore(_handle)?)
             }
             #[allow(unreachable_patterns)]
             _ => {

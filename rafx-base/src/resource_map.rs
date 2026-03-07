@@ -174,14 +174,14 @@ impl ResourceMap {
     /// Read-only fetch of a resource. Trying to get a resource that is not in the map is fatal. Use
     /// try_fetch if unsure whether the resource exists. Requesting read access to a resource that
     /// has any concurrently active writer is fatal.
-    pub fn fetch<R: Resource>(&self) -> ReadBorrow<R> {
+    pub fn fetch<R: Resource>(&self) -> ReadBorrow<'_, R> {
         let result = self.try_fetch();
         Self::unwrap_resource(result)
     }
 
     /// Read-only fetch of a resource. Requesting read access to a resource that has a concurrently
     /// active writer is fatal. Returns None if the type is not registered.
-    pub fn try_fetch<R: Resource>(&self) -> Option<ReadBorrow<R>> {
+    pub fn try_fetch<R: Resource>(&self) -> Option<ReadBorrow<'_, R>> {
         let res_id = ResourceId::new::<R>();
 
         self.resources.get(&res_id).map(|r| ReadBorrow {
@@ -193,14 +193,14 @@ impl ResourceMap {
     /// Read/Write fetch of a resource. Trying to get a resource that is not in the map is fatal. Use
     /// try_fetch if unsure whether the resource exists. Requesting write access to a resource with
     /// any concurrently active read/write is fatal
-    pub fn fetch_mut<R: Resource>(&self) -> WriteBorrow<R> {
+    pub fn fetch_mut<R: Resource>(&self) -> WriteBorrow<'_, R> {
         let result = self.try_fetch_mut();
         Self::unwrap_resource(result)
     }
 
     /// Read/Write fetch of a resource. Requesting write access to a resource with
     /// any concurrently active read/write is fatal. Returns None if the type is not registered.
-    pub fn try_fetch_mut<R: Resource>(&self) -> Option<WriteBorrow<R>> {
+    pub fn try_fetch_mut<R: Resource>(&self) -> Option<WriteBorrow<'_, R>> {
         let res_id = ResourceId::new::<R>();
 
         self.resources.get(&res_id).map(|r| WriteBorrow::<R> {

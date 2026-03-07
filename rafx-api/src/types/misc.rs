@@ -757,7 +757,7 @@ impl<'a> RafxTextureBarrier<'a> {
         texture: &'a RafxTexture,
         src_state: RafxResourceState,
         dst_state: RafxResourceState,
-    ) -> RafxTextureBarrier {
+    ) -> RafxTextureBarrier<'a> {
         RafxTextureBarrier {
             texture,
             src_state,

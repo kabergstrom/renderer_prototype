@@ -299,7 +299,7 @@ impl<T> TrustCell<T> {
     ///
     /// This function will panic if there is a mutable reference to the data
     /// already in use.
-    pub fn borrow(&self) -> Ref<T> {
+    pub fn borrow(&self) -> Ref<'_, T> {
         self.check_flag_read()
             .unwrap_or_else(|_| borrow_panic!(" mutably"));
 
@@ -314,7 +314,7 @@ impl<T> TrustCell<T> {
     /// Absence of write accesses is checked at run-time. If access is not
     /// possible, an error is returned.
     #[allow(dead_code)]
-    pub fn try_borrow(&self) -> Result<Ref<T>, InvalidBorrow> {
+    pub fn try_borrow(&self) -> Result<Ref<'_, T>, InvalidBorrow> {
         self.check_flag_read()?;
 
         Ok(Ref {
@@ -331,7 +331,7 @@ impl<T> TrustCell<T> {
     ///
     /// This function will panic if there are any references to the data already
     /// in use.
-    pub fn borrow_mut(&self) -> RefMut<T> {
+    pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.check_flag_write()
             .unwrap_or_else(|_| borrow_panic!(""));
 
@@ -346,7 +346,7 @@ impl<T> TrustCell<T> {
     /// Exclusive access is checked at run-time. If access is not possible, an
     /// error is returned.#
     #[allow(dead_code)]
-    pub fn try_borrow_mut(&self) -> Result<RefMut<T>, InvalidBorrow> {
+    pub fn try_borrow_mut(&self) -> Result<RefMut<'_, T>, InvalidBorrow> {
         self.check_flag_write()?;
 
         Ok(RefMut {

@@ -40,26 +40,26 @@ impl<'a> ResourceRefMap<'a> {
     /// Read-only fetch of a resource. Trying to get a resource that is not in the map is fatal. Use
     /// try_fetch if unsure whether the resource exists. Requesting read access to a resource that
     /// has any concurrently active writer is fatal.
-    pub fn fetch<R: Resource>(&self) -> ResourceRefBorrow<R> {
+    pub fn fetch<R: Resource>(&self) -> ResourceRefBorrow<'_, R> {
         ResourceRefBorrow(self.resources.fetch::<ResourceRef<R>>())
     }
 
     /// Read-only fetch of a resource. Requesting read access to a resource that has a concurrently
     /// active writer is fatal. Returns None if the type is not registered.
-    pub fn try_fetch<R: Resource>(&self) -> Option<ResourceRefBorrow<R>> {
+    pub fn try_fetch<R: Resource>(&self) -> Option<ResourceRefBorrow<'_, R>> {
         self.resources.try_fetch().map(|x| ResourceRefBorrow(x))
     }
 
     /// Read/Write fetch of a resource. Trying to get a resource that is not in the map is fatal. Use
     /// try_fetch if unsure whether the resource exists. Requesting write access to a resource with
     /// any concurrently active read/write is fatal
-    pub fn fetch_mut<R: Resource>(&self) -> ResourceRefBorrowMut<R> {
+    pub fn fetch_mut<R: Resource>(&self) -> ResourceRefBorrowMut<'_, R> {
         ResourceRefBorrowMut(self.resources.fetch_mut::<ResourceRef<R>>())
     }
 
     /// Read/Write fetch of a resource. Requesting write access to a resource with
     /// any concurrently active read/write is fatal. Returns None if the type is not registered.
-    pub fn try_fetch_mut<R: Resource>(&self) -> Option<ResourceRefBorrowMut<R>> {
+    pub fn try_fetch_mut<R: Resource>(&self) -> Option<ResourceRefBorrowMut<'_, R>> {
         self.resources
             .try_fetch_mut()
             .map(|x| ResourceRefBorrowMut(x))
