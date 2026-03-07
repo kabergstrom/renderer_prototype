@@ -1,0 +1,6 @@
+[[language]]
+name = "rust"
+auto-format = true
+
+[language-server.rust-analyzer]
+config = {  cargo = { allFeatures = false, features = ["rafx-dx12", "rafx-vulkan", "rafx-metal"] }}

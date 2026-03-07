@@ -1,12 +1,17 @@
 use crate::dx12::{
     RafxCommandBufferDx12, RafxCommandPoolDx12, RafxDeviceContextDx12, RafxFenceDx12,
-    RafxSemaphoreDx12, RafxSwapchainDx12,
+    RafxSemaphoreDx12, RafxSwapchainDx12, RafxTimelineSemaphoreDx12,
 };
 use crate::{RafxCommandPoolDef, RafxError, RafxPresentSuccessResult, RafxQueueType, RafxResult};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use super::d3d12;
+
+pub struct TimelineSemaphoreSubmitDx12<'a> {
+    pub semaphore: &'a RafxTimelineSemaphoreDx12,
+    pub value: u64,
+}
 
 static NEXT_QUEUE_ID: AtomicU32 = AtomicU32::new(0);
 
@@ -143,6 +148,54 @@ impl RafxQueueDx12 {
 
         for signal_semaphore in signal_semaphores {
             signal_semaphore.fence().queue_signal(self)?;
+        }
+
+        if let Some(signal_fence) = signal_fence {
+            signal_fence.queue_signal(self)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn submit_with_timeline(
+        &self,
+        command_buffers: &[&RafxCommandBufferDx12],
+        wait_binary: &[&RafxSemaphoreDx12],
+        signal_binary: &[&RafxSemaphoreDx12],
+        wait_timeline: &[TimelineSemaphoreSubmitDx12],
+        signal_timeline: &[TimelineSemaphoreSubmitDx12],
+        signal_fence: Option<&RafxFenceDx12>,
+    ) -> RafxResult<()> {
+        for ws in wait_binary {
+            ws.fence().queue_wait(self)?;
+        }
+
+        for wt in wait_timeline {
+            unsafe {
+                self.inner
+                    .queue
+                    .Wait(wt.semaphore.dx12_fence(), wt.value)?;
+            }
+        }
+
+        unsafe {
+            let command_lists: Vec<d3d12::ID3D12CommandList> = command_buffers
+                .iter()
+                .map(|x| x.dx12_command_list())
+                .collect();
+            self.inner.queue.ExecuteCommandLists(&command_lists);
+        }
+
+        for ss in signal_binary {
+            ss.fence().queue_signal(self)?;
+        }
+
+        for st in signal_timeline {
+            unsafe {
+                self.inner
+                    .queue
+                    .Signal(st.semaphore.dx12_fence(), st.value)?;
+            }
         }
 
         if let Some(signal_fence) = signal_fence {

@@ -705,6 +705,146 @@ impl RafxTextureDx12 {
         Self::from_existing(device_context, None, texture_def)
     }
 
+    /// Create a texture backed by a committed resource with D3D12_HEAP_FLAG_SHARED,
+    /// suitable for cross-process sharing via named kernel objects.
+    pub(crate) fn new_shared(
+        device_context: &RafxDeviceContextDx12,
+        texture_def: &RafxTextureDef,
+    ) -> RafxResult<RafxTextureDx12> {
+        texture_def.verify();
+
+        let dimensions = texture_def
+            .dimensions
+            .determine_dimensions(texture_def.extents);
+
+        let create_uav_chain = texture_def
+            .resource_type
+            .intersects(RafxResourceType::TEXTURE_READ_WRITE)
+            || (texture_def.mip_count > 1 && !texture_def.format.is_compressed());
+
+        let d3d12_dimension = match dimensions {
+            RafxTextureDimensions::Dim1D => d3d12::D3D12_RESOURCE_DIMENSION_TEXTURE1D,
+            RafxTextureDimensions::Dim2D => d3d12::D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            RafxTextureDimensions::Dim3D => d3d12::D3D12_RESOURCE_DIMENSION_TEXTURE3D,
+            _ => unreachable!(),
+        };
+
+        let dxgi_format: DXGI_FORMAT = texture_def.format.into();
+        let typeless_format = super::internal::conversions::dxgi_to_typeless(dxgi_format);
+
+        let (extents_width, extents_height) = if texture_def.format.is_compressed() {
+            (
+                rafx_base::memory::round_size_up_to_alignment_u32(
+                    texture_def.extents.width,
+                    texture_def.format.block_width_in_pixels(),
+                ),
+                rafx_base::memory::round_size_up_to_alignment_u32(
+                    texture_def.extents.height,
+                    texture_def.format.block_height_in_pixels(),
+                ),
+            )
+        } else {
+            (texture_def.extents.width, texture_def.extents.height)
+        };
+
+        let mut desc = d3d12::D3D12_RESOURCE_DESC {
+            Dimension: d3d12_dimension,
+            Alignment: 0,
+            Width: extents_width as u64,
+            Height: extents_height,
+            DepthOrArraySize: if texture_def.array_length != 1 {
+                texture_def.array_length
+            } else {
+                texture_def.extents.depth
+            } as u16,
+            MipLevels: texture_def.mip_count as u16,
+            Format: typeless_format,
+            SampleDesc: dxgi::Common::DXGI_SAMPLE_DESC {
+                Count: texture_def.sample_count.as_u32(),
+                Quality: 0,
+            },
+            Layout: d3d12::D3D12_TEXTURE_LAYOUT_UNKNOWN,
+            Flags: d3d12::D3D12_RESOURCE_FLAG_NONE,
+        };
+
+        if create_uav_chain {
+            desc.Flags |= d3d12::D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        }
+        if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_COLOR)
+        {
+            desc.Flags |= d3d12::D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+        }
+        if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_DEPTH_STENCIL)
+        {
+            desc.Flags |= d3d12::D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+        }
+        let is_depth = texture_def.format.has_depth();
+        if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_ARRAY_SLICES)
+            || texture_def
+                .resource_type
+                .intersects(RafxResourceType::RENDER_TARGET_DEPTH_SLICES)
+        {
+            if is_depth {
+                desc.Flags |= d3d12::D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+            } else {
+                desc.Flags |= d3d12::D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+            }
+        }
+
+        let mut d3d_clear_value = d3d12::D3D12_CLEAR_VALUE::default();
+        let clear_value: Option<*const d3d12::D3D12_CLEAR_VALUE> = if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_DEPTH_STENCIL)
+        {
+            d3d_clear_value.Format = dxgi_format;
+            d3d_clear_value.Anonymous.DepthStencil.Depth = texture_def.clear_value[0];
+            d3d_clear_value.Anonymous.DepthStencil.Stencil = texture_def.clear_value[1] as u8;
+            Some(&d3d_clear_value)
+        } else if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_COLOR)
+        {
+            d3d_clear_value.Format = dxgi_format;
+            d3d_clear_value.Anonymous.Color = texture_def.clear_value;
+            Some(&d3d_clear_value)
+        } else {
+            None
+        };
+
+        let heap_properties = d3d12::D3D12_HEAP_PROPERTIES {
+            Type: d3d12::D3D12_HEAP_TYPE_DEFAULT,
+            ..Default::default()
+        };
+
+        let d3d12_resource_states: d3d12::D3D12_RESOURCE_STATES =
+            RafxResourceState::UNDEFINED.into();
+
+        let mut resource: Option<d3d12::ID3D12Resource> = None;
+        unsafe {
+            device_context.d3d12_device().CreateCommittedResource(
+                &heap_properties,
+                d3d12::D3D12_HEAP_FLAG_SHARED,
+                &desc,
+                d3d12_resource_states,
+                clear_value,
+                &mut resource,
+            )?;
+        }
+
+        let raw_image = RafxRawImageDx12 {
+            image: resource.unwrap(),
+            allocation: None,
+        };
+
+        Self::from_existing(device_context, Some(raw_image), texture_def)
+    }
+
     // This path is mostly so we can wrap a provided swapchain image
     pub fn from_existing(
         device_context: &RafxDeviceContextDx12,

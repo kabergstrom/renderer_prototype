@@ -246,32 +246,36 @@ impl RafxDescriptorSetArrayDx12 {
 
         let cbv_srv_uav_table_info = if let Some(root_index) = layout.cbv_srv_uav_table_root_index {
             let stride = layout.cbv_srv_uav_table_descriptor_count.unwrap();
+            let count = stride * descriptor_set_array_def.array_length as u32;
+            log::debug!("descriptor_set_array: allocating {} cbv_srv_uav descriptors (stride={}, array_len={}) for set_index={}",
+                count, stride, descriptor_set_array_def.array_length, layout_index);
             let first_id = device_context.inner.heaps.gpu_cbv_srv_uav_heap.allocate(
                 device_context.d3d12_device(),
-                stride * descriptor_set_array_def.array_length as u32,
-            )?;
+                count,
+            ).map_err(|e| { log::error!("cbv_srv_uav heap allocate failed: {e:?}"); e })?;
             Some(RafxDescriptorSetTableInfo {
                 first_id,
                 stride,
                 root_index,
             })
-            //TODO: Init to safe defaults
         } else {
             None
         };
 
         let sampler_table_info = if let Some(root_index) = layout.sampler_table_root_index {
             let stride = layout.sampler_table_descriptor_count.unwrap();
+            let count = stride * descriptor_set_array_def.array_length as u32;
+            log::debug!("descriptor_set_array: allocating {} sampler descriptors (stride={}, array_len={}) for set_index={}",
+                count, stride, descriptor_set_array_def.array_length, layout_index);
             let first_id = device_context.inner.heaps.gpu_sampler_heap.allocate(
                 device_context.d3d12_device(),
-                stride * descriptor_set_array_def.array_length as u32,
-            )?;
+                count,
+            ).map_err(|e| { log::error!("sampler heap allocate failed: {e:?}"); e })?;
             Some(RafxDescriptorSetTableInfo {
                 first_id,
                 stride,
                 root_index,
             })
-            //TODO: Init to safe defaults
         } else {
             None
         };

@@ -5,6 +5,8 @@ pub enum RafxExternalTextureHandle {
     Fd(i32),
     /// macOS: IOSurface global ID (from IOSurfaceGetID)
     IOSurfaceId(u32),
+    /// Windows: named NT kernel object (Local\\ngp_tex_...)
+    NtHandleName(String),
 }
 
 /// Platform-specific handle for cross-process timeline semaphore sharing.
@@ -14,4 +16,6 @@ pub enum RafxExternalSemaphoreHandle {
     Fd(i32),
     /// macOS: Mach port from MTLSharedEvent.machPort
     MachPort(u32),
+    /// Windows: named NT kernel object (Local\\ngp_sem_...)
+    NtHandleName(String),
 }

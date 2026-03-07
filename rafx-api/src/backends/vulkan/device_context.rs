@@ -634,29 +634,38 @@ impl RafxDeviceContextVulkan {
         };
 
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        return Err(RafxError::StringError(
-            "Exportable textures not supported on this platform".to_string(),
-        ));
+        {
+            // Suppress unused-variable warnings for platform-gated code above.
+            let _ = image_type;
+            let _ = format_vk;
+            let _ = usage_flags;
+            return Err(RafxError::StringError(
+                "Exportable textures not supported on this platform".to_string(),
+            ));
+        }
 
-        let raw_image = crate::vulkan::RafxRawImageVulkan {
-            image,
-            // allocation is None — we manage device_memory ourselves.
-            // The image+memory are cleaned up by ExternalImageCleanup stored in the texture.
-            allocation: None,
-        };
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            let raw_image = crate::vulkan::RafxRawImageVulkan {
+                image,
+                // allocation is None — we manage device_memory ourselves.
+                // The image+memory are cleaned up by ExternalImageCleanup stored in the texture.
+                allocation: None,
+            };
 
-        // Store the device memory so we can free it and export fd from it.
-        // We attach it via a wrapper that we keep alive alongside the texture.
-        let texture = RafxTextureVulkan::from_existing(self, Some(raw_image), texture_def)?;
+            // Store the device memory so we can free it and export fd from it.
+            // We attach it via a wrapper that we keep alive alongside the texture.
+            let texture = RafxTextureVulkan::from_existing(self, Some(raw_image), texture_def)?;
 
-        // Stash the device_memory on a side-table so export_texture_handle can find it
-        self.inner
-            .external_device_memories
-            .lock()
-            .unwrap()
-            .insert(texture.vk_image(), device_memory);
+            // Stash the device_memory on a side-table so export_texture_handle can find it
+            self.inner
+                .external_device_memories
+                .lock()
+                .unwrap()
+                .insert(texture.vk_image(), device_memory);
 
-        Ok(texture)
+            Ok(texture)
+        }
     }
 
     pub fn export_texture_handle(

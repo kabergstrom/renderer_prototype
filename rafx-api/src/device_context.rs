@@ -304,12 +304,15 @@ impl RafxDeviceContext {
     }
 
     /// Create a timeline semaphore with the given initial value.
-    /// Currently only supported on Vulkan (requires VK_KHR_timeline_semaphore).
     pub fn create_timeline_semaphore(
         &self,
         initial_value: u64,
     ) -> RafxResult<RafxTimelineSemaphore> {
         Ok(match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => RafxTimelineSemaphore::Dx12(
+                crate::dx12::RafxTimelineSemaphoreDx12::new(inner, initial_value)?,
+            ),
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => RafxTimelineSemaphore::Vk(
                 crate::vulkan::RafxTimelineSemaphoreVulkan::new(inner, initial_value)?,
@@ -324,12 +327,15 @@ impl RafxDeviceContext {
     }
 
     /// Create a texture backed by exportable memory (for cross-process sharing).
-    /// Currently only supported on Vulkan.
     pub fn create_exportable_texture(
         &self,
         texture_def: &RafxTextureDef,
     ) -> RafxResult<RafxTexture> {
         Ok(match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => {
+                RafxTexture::Dx12(inner.create_exportable_texture(texture_def)?)
+            }
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => {
                 RafxTexture::Vk(inner.create_exportable_texture(texture_def)?)
@@ -349,6 +355,10 @@ impl RafxDeviceContext {
         texture: &RafxTexture,
     ) -> RafxResult<RafxExternalTextureHandle> {
         match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => {
+                inner.export_texture_handle(texture.dx12_texture().unwrap())
+            }
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => {
                 inner.export_texture_handle(texture.vk_texture().unwrap())
@@ -367,6 +377,10 @@ impl RafxDeviceContext {
         handle: RafxExternalTextureHandle,
     ) -> RafxResult<RafxTexture> {
         Ok(match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => {
+                RafxTexture::Dx12(inner.import_texture(texture_def, handle)?)
+            }
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => {
                 RafxTexture::Vk(inner.import_texture(texture_def, handle)?)
@@ -386,6 +400,10 @@ impl RafxDeviceContext {
         initial_value: u64,
     ) -> RafxResult<RafxTimelineSemaphore> {
         Ok(match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => RafxTimelineSemaphore::Dx12(
+                inner.create_exportable_timeline_semaphore(initial_value)?,
+            ),
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => RafxTimelineSemaphore::Vk(
                 inner.create_exportable_timeline_semaphore(initial_value)?,
@@ -405,6 +423,9 @@ impl RafxDeviceContext {
         semaphore: &RafxTimelineSemaphore,
     ) -> RafxResult<RafxExternalSemaphoreHandle> {
         match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => inner
+                .export_timeline_semaphore_handle(semaphore.dx12_timeline_semaphore().unwrap()),
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => inner
                 .export_timeline_semaphore_handle(semaphore.vk_timeline_semaphore().unwrap()),
@@ -421,6 +442,10 @@ impl RafxDeviceContext {
         handle: RafxExternalSemaphoreHandle,
     ) -> RafxResult<RafxTimelineSemaphore> {
         Ok(match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => {
+                RafxTimelineSemaphore::Dx12(inner.import_timeline_semaphore(handle)?)
+            }
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => {
                 RafxTimelineSemaphore::Vk(inner.import_timeline_semaphore(handle)?)

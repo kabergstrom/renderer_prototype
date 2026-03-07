@@ -1,9 +1,10 @@
 use crate::{
     RafxApiDefDx12, RafxBufferDef, RafxComputePipelineDef, RafxDescriptorSetArrayDef,
     RafxDeviceContext, RafxDeviceInfo, RafxDrawIndexedIndirectCommand, RafxDrawIndirectCommand,
-    RafxError, RafxFormat, RafxGraphicsPipelineDef, RafxQueueType, RafxResourceType, RafxResult,
-    RafxRootSignatureDef, RafxSampleCount, RafxSamplerDef, RafxShaderModuleDefDx12,
-    RafxShaderStageDef, RafxSwapchainDef, RafxTextureDef, RafxValidationMode,
+    RafxError, RafxExternalSemaphoreHandle, RafxExternalTextureHandle, RafxFormat,
+    RafxGraphicsPipelineDef, RafxQueueType, RafxResourceType, RafxResult, RafxRootSignatureDef,
+    RafxSampleCount, RafxSamplerDef, RafxShaderModuleDefDx12, RafxShaderStageDef, RafxSwapchainDef,
+    RafxTextureDef, RafxValidationMode,
 };
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::mem::ManuallyDrop;
@@ -11,8 +12,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::dx12::{
     RafxBufferDx12, RafxDescriptorSetArrayDx12, RafxDx12FeatureLevel, RafxFenceDx12,
-    RafxPipelineDx12, RafxQueueDx12, RafxRootSignatureDx12, RafxSamplerDx12, RafxSemaphoreDx12,
-    RafxShaderDx12, RafxShaderModuleDx12, RafxSwapchainDx12, RafxTextureDx12,
+    RafxPipelineDx12, RafxQueueDx12, RafxRawImageDx12, RafxRootSignatureDx12, RafxSamplerDx12,
+    RafxSemaphoreDx12, RafxShaderDx12, RafxShaderModuleDx12, RafxSwapchainDx12, RafxTextureDx12,
+    RafxTimelineSemaphoreDx12,
 };
 
 use super::d3d;
@@ -238,6 +240,10 @@ pub struct RafxDeviceContextDx12Inner {
 
     pub(crate) mipmap_resources: rafx_base::trust_cell::TrustCell<Option<Dx12MipmapResources>>,
 
+    /// Shared HANDLEs from CreateSharedHandle (textures + fences).
+    /// Closed on device destroy to release named kernel objects.
+    pub(crate) external_shared_handles: Mutex<Vec<windows::Win32::Foundation::HANDLE>>,
+
     destroyed: AtomicBool,
 
     #[cfg(debug_assertions)]
@@ -260,6 +266,13 @@ impl Drop for RafxDeviceContextDx12Inner {
         // We expect this is already set to None by RafxApiDx12::destroy so that there are no
         // remaining references to RafxDeviceContextDx12
         assert!(self.mipmap_resources.borrow().is_none());
+
+        // Close any shared HANDLEs created for cross-process export.
+        for handle in self.external_shared_handles.lock().unwrap().drain(..) {
+            unsafe {
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+            }
+        }
 
         if !self.destroyed.swap(true, Ordering::AcqRel) {
             unsafe {
@@ -335,6 +348,8 @@ impl RafxDeviceContextDx12Inner {
             heaps,
 
             mipmap_resources: Default::default(),
+
+            external_shared_handles: Mutex::new(Vec::new()),
 
             destroyed: AtomicBool::new(false),
 
@@ -598,6 +613,140 @@ impl RafxDeviceContextDx12 {
         data: RafxShaderModuleDefDx12,
     ) -> RafxResult<RafxShaderModuleDx12> {
         RafxShaderModuleDx12::new(self, data)
+    }
+
+    // -----------------------------------------------------------------------
+    // Cross-process texture & timeline semaphore sharing
+    // -----------------------------------------------------------------------
+
+    /// Create a texture backed by exportable memory (committed + D3D12_HEAP_FLAG_SHARED).
+    pub fn create_exportable_texture(
+        &self,
+        texture_def: &RafxTextureDef,
+    ) -> RafxResult<RafxTextureDx12> {
+        RafxTextureDx12::new_shared(self, texture_def)
+    }
+
+    /// Export a named shared handle for a texture created with `create_exportable_texture`.
+    pub fn export_texture_handle(
+        &self,
+        texture: &RafxTextureDx12,
+    ) -> RafxResult<RafxExternalTextureHandle> {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let name = format!("Local\\ngp_tex_{}_{}", std::process::id(), id);
+        let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        let handle = unsafe {
+            self.d3d12_device().CreateSharedHandle(
+                texture.dx12_resource(),
+                None,
+                0x10000000, // GENERIC_ALL
+                windows::core::PCWSTR(wide.as_ptr()),
+            )?
+        };
+        self.inner
+            .external_shared_handles
+            .lock()
+            .unwrap()
+            .push(handle);
+        Ok(RafxExternalTextureHandle::NtHandleName(name))
+    }
+
+    /// Import a texture from a named shared handle (from another process).
+    pub fn import_texture(
+        &self,
+        texture_def: &RafxTextureDef,
+        handle: RafxExternalTextureHandle,
+    ) -> RafxResult<RafxTextureDx12> {
+        let name = match handle {
+            RafxExternalTextureHandle::NtHandleName(name) => name,
+            _ => {
+                return Err(RafxError::StringError(
+                    "Expected NtHandleName for DX12 texture import".into(),
+                ))
+            }
+        };
+        let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        let nt_handle = unsafe {
+            self.d3d12_device().OpenSharedHandleByName(
+                windows::core::PCWSTR(wide.as_ptr()),
+                0x10000000, // GENERIC_ALL
+            )?
+        };
+        let mut resource: Option<d3d12::ID3D12Resource> = None;
+        unsafe {
+            self.d3d12_device()
+                .OpenSharedHandle(nt_handle, &mut resource)?;
+            let _ = windows::Win32::Foundation::CloseHandle(nt_handle);
+        }
+        let raw_image = RafxRawImageDx12 {
+            image: resource.unwrap(),
+            allocation: None,
+        };
+        RafxTextureDx12::from_existing(self, Some(raw_image), texture_def)
+    }
+
+    /// Create a timeline semaphore that can be exported for cross-process sharing.
+    pub fn create_exportable_timeline_semaphore(
+        &self,
+        initial_value: u64,
+    ) -> RafxResult<RafxTimelineSemaphoreDx12> {
+        RafxTimelineSemaphoreDx12::new_shared(self, initial_value)
+    }
+
+    /// Export a named shared handle for a timeline semaphore.
+    pub fn export_timeline_semaphore_handle(
+        &self,
+        semaphore: &RafxTimelineSemaphoreDx12,
+    ) -> RafxResult<RafxExternalSemaphoreHandle> {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let name = format!("Local\\ngp_sem_{}_{}", std::process::id(), id);
+        let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        let handle = unsafe {
+            self.d3d12_device().CreateSharedHandle(
+                semaphore.dx12_fence(),
+                None,
+                0x10000000, // GENERIC_ALL
+                windows::core::PCWSTR(wide.as_ptr()),
+            )?
+        };
+        self.inner
+            .external_shared_handles
+            .lock()
+            .unwrap()
+            .push(handle);
+        Ok(RafxExternalSemaphoreHandle::NtHandleName(name))
+    }
+
+    /// Import a timeline semaphore from a named shared handle.
+    pub fn import_timeline_semaphore(
+        &self,
+        handle: RafxExternalSemaphoreHandle,
+    ) -> RafxResult<RafxTimelineSemaphoreDx12> {
+        let name = match handle {
+            RafxExternalSemaphoreHandle::NtHandleName(name) => name,
+            _ => {
+                return Err(RafxError::StringError(
+                    "Expected NtHandleName for DX12 semaphore import".into(),
+                ))
+            }
+        };
+        let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        let nt_handle = unsafe {
+            self.d3d12_device().OpenSharedHandleByName(
+                windows::core::PCWSTR(wide.as_ptr()),
+                0x10000000, // GENERIC_ALL
+            )?
+        };
+        let mut fence: Option<d3d12::ID3D12Fence> = None;
+        unsafe {
+            self.d3d12_device()
+                .OpenSharedHandle(nt_handle, &mut fence)?;
+            let _ = windows::Win32::Foundation::CloseHandle(nt_handle);
+        }
+        let fence1: d3d12::ID3D12Fence1 = fence.unwrap().cast()?;
+        RafxTimelineSemaphoreDx12::from_existing(self, fence1)
     }
 
     pub fn find_supported_format(
