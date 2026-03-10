@@ -9,13 +9,32 @@ use serde::{Deserialize, Serialize};
 /// file. The shader package is immutable to ensure the hash is never stale.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
+pub struct RafxPipelineVariant {
+    pub shaders: Vec<RafxHashedShaderPackage>,
+    pub vertex_channels: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 pub struct RafxPipelinePackage {
     pub shaders: Vec<RafxHashedShaderPackage>,
+    /// Bitmask of vertex channels required by this pipeline's vertex shader.
+    /// `None` for shaders without a VertexBuffer SSBO (blit, compute).
+    pub vertex_channels: Option<u32>,
+    /// Additional vertex-format variants (multi-format shaders).
+    /// Old packages deserialize with an empty vec (backward compat).
+    #[cfg_attr(feature = "serde-support", serde(default))]
+    pub variants: Vec<RafxPipelineVariant>,
 }
 
 impl RafxPipelinePackage {
     pub fn new(shaders: Vec<RafxHashedShaderPackage>) -> Self {
-        Self { shaders }
+        Self { shaders, vertex_channels: None, variants: Vec::new() }
+    }
+
+    pub fn with_vertex_channels(mut self, channels: Option<u32>) -> Self {
+        self.vertex_channels = channels;
+        self
     }
 }
 

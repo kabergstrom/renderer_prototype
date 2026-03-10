@@ -1,5 +1,5 @@
 use crate::parse_declarations::{
-    BindingType, ParseDeclarationsResult, ParsedBindingWithAnnotations,
+    BindingType, ParseDeclarationsResult, ParseFieldResult, ParsedBindingWithAnnotations,
 };
 use crate::reflect::ShaderProcessorReflectionData;
 use crate::{
@@ -40,12 +40,104 @@ fn determine_memory_layout(binding_struct_type: StructBindingType) -> MemoryLayo
     }
 }
 
+/// Map GLSL field names in a Vertex struct to channel bits.
+/// Returns Err for unrecognized non-padding fields.
+fn field_name_to_channel_bit(name: &str) -> Result<Option<u32>, String> {
+    match name {
+        "pos" | "position" => Ok(Some(1 << 0)), // POSITION
+        "normal" => Ok(Some(1 << 1)),           // NORMAL
+        "tangent" => Ok(Some(1 << 2)),          // TANGENT
+        "uv" | "uv0" | "texcoord" | "texcoord0" => Ok(Some(1 << 3)), // UV0
+        "uv2" | "uv1" | "texcoord1" => Ok(Some(1 << 4)),             // UV1
+        "color" | "colour" => Ok(Some(1 << 5)), // COLOR
+        _ if name.starts_with("_padding") => Ok(None),
+        _ => Err(format!(
+            "Unrecognized vertex field '{}' in VertexBuffer struct. \
+             Recognized names: pos, normal, tangent, uv, uv2, color",
+            name
+        )),
+    }
+}
+
+fn compute_channels_from_fields(fields: &[ParseFieldResult]) -> Result<u32, String> {
+    let mut bitmask = 0u32;
+    for field in fields {
+        if let Some(bit) = field_name_to_channel_bit(&field.field_name)? {
+            bitmask |= bit;
+        }
+    }
+    Ok(bitmask)
+}
+
+/// Compute vertex channel bitmask by scanning all compile results for a
+/// `buffer readonly VertexBuffer` binding (instance_name == "vertex_buffer").
+///
+/// The SSBO binding typically looks like:
+///   layout(...) buffer readonly VertexBuffer { Vertex vertices[]; } vertex_buffer;
+/// The binding's inline fields contain a single array field whose type_name
+/// is the actual Vertex struct. We look up that struct's fields for channels.
+fn compute_vertex_channels(compile_results: &[CompileResult]) -> Result<Option<u32>, String> {
+    for cr in compile_results {
+        for binding in &cr.parsed_declarations.bindings {
+            if binding.parsed.instance_name != "vertex_buffer" {
+                continue;
+            }
+            if binding.parsed.binding_type != BindingType::Buffer {
+                continue;
+            }
+
+            // The binding has inline fields (e.g. `Vertex vertices[]`).
+            // Find the array element's struct type and look up its fields.
+            if let Some(inline_fields) = &binding.parsed.fields {
+                for field in inline_fields.iter() {
+                    // Look up the struct referenced by this field's type
+                    if let Some(s) = cr
+                        .parsed_declarations
+                        .structs
+                        .iter()
+                        .find(|s| s.parsed.type_name == field.type_name)
+                    {
+                        return Ok(Some(compute_channels_from_fields(&s.parsed.fields)?));
+                    }
+                }
+                // If no struct was found, try the fields directly (unlikely for SSBOs)
+                return Ok(Some(compute_channels_from_fields(inline_fields)?));
+            }
+
+            // No inline fields — try the binding's type_name as a struct
+            if let Some(s) = cr
+                .parsed_declarations
+                .structs
+                .iter()
+                .find(|s| s.parsed.type_name == binding.parsed.type_name)
+            {
+                return Ok(Some(compute_channels_from_fields(&s.parsed.fields)?));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Public entry point for lib.rs when rust codegen is disabled.
+pub(crate) fn compute_vertex_channels_from_results(
+    compile_results: &[CompileResult],
+) -> Option<u32> {
+    match compute_vertex_channels(compile_results) {
+        Ok(channels) => channels,
+        Err(e) => {
+            log::error!("Failed to compute vertex channels: {}", e);
+            None
+        }
+    }
+}
+
+/// Returns (generated_rust_code, vertex_channels_bitmask).
 pub(crate) fn generate_rust_code(
     pipeline_name: String,
     compile_results: &[CompileResult],
     reflection_data: &ShaderProcessorReflectionData,
     for_rafx_framework_crate: bool,
-) -> Result<String, String> {
+) -> Result<(String, Option<u32>), String> {
     // builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     let mut all_structs = FnvHashMap::default();
     for s in compile_results
@@ -137,13 +229,16 @@ pub(crate) fn generate_rust_code(
         }
     }
 
-    generate_rust_file(&declarations, &builtin_types, &user_types)
+    let vertex_channels = compute_vertex_channels(compile_results)?;
+    let code = generate_rust_file(&declarations, &builtin_types, &user_types, vertex_channels)?;
+    Ok((code, vertex_channels))
 }
 
 fn generate_rust_file(
     parsed_declarations: &ParseDeclarationsResult,
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     user_types: &FnvHashMap<String, UserType>,
+    vertex_channels: Option<u32>,
 ) -> Result<String, String> {
     let mut rust_code = Vec::<String>::default();
 
@@ -583,7 +678,7 @@ fn create_binding_wrapper_binding_item(
     use heck::SnakeCase;
     let binding_name = binding.parsed.instance_name.to_snake_case();
     let binding_index_string =
-        format!("{} as u32", descriptor_constant_binding_index_name(binding));
+        format!("{}.binding", descriptor_constant_name(binding));
 
     if e.immutable_samplers.is_none()
         && e.resource.resource_type == RafxResourceType::COMBINED_IMAGE_SAMPLER
@@ -673,20 +768,9 @@ fn create_binding_wrapper_binding_item(
     Ok(())
 }
 
-fn descriptor_constant_set_index_name(binding: &ParsedBindingWithAnnotations) -> String {
+fn descriptor_constant_name(binding: &ParsedBindingWithAnnotations) -> String {
     use heck::ShoutySnakeCase;
-    format!(
-        "{}_DESCRIPTOR_SET_INDEX",
-        binding.parsed.instance_name.to_shouty_snake_case()
-    )
-}
-
-fn descriptor_constant_binding_index_name(binding: &ParsedBindingWithAnnotations) -> String {
-    use heck::ShoutySnakeCase;
-    format!(
-        "{}_DESCRIPTOR_BINDING_INDEX",
-        binding.parsed.instance_name.to_shouty_snake_case()
-    )
+    binding.parsed.instance_name.to_shouty_snake_case()
 }
 
 fn rust_binding_constants(
@@ -694,19 +778,15 @@ fn rust_binding_constants(
     parsed_declarations: &ParseDeclarationsResult,
 ) {
     for binding in &parsed_declarations.bindings {
-        if let Some(set_index) = binding.parsed.layout_parts.set {
+        if let (Some(set_index), Some(binding_index)) = (
+            binding.parsed.layout_parts.set,
+            binding.parsed.layout_parts.binding,
+        ) {
             rust_code.push(format!(
-                "pub const {}: usize = {};\n",
-                descriptor_constant_set_index_name(binding),
-                set_index
-            ));
-        }
-
-        if let Some(binding_index) = binding.parsed.layout_parts.binding {
-            rust_code.push(format!(
-                "pub const {}: usize = {};\n",
-                descriptor_constant_binding_index_name(binding),
-                binding_index
+                "pub const {}: crate::ShaderResourceBindingKey = crate::ShaderResourceBindingKey {{ set: {}, binding: {} }};\n",
+                descriptor_constant_name(binding),
+                set_index,
+                binding_index,
             ));
         }
     }

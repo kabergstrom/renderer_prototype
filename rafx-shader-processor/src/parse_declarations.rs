@@ -27,6 +27,10 @@ pub(crate) struct SlotNameAnnotation(pub(crate) String);
 #[serde(rename = "semantic")]
 pub(crate) struct SemanticAnnotation(pub(crate) String);
 
+#[derive(Default, Deserialize, Debug, Clone)]
+#[serde(rename = "vertex_formats")]
+pub(crate) struct VertexFormatsAnnotation(pub(crate) Vec<String>);
+
 fn parse_ron_or_default<'de, T: Default + Deserialize<'de>>(data: &'de str) -> Result<T, String> {
     if !data.is_empty() {
         ron::de::from_str(&data)
@@ -81,6 +85,7 @@ pub(crate) struct BindingAnnotations {
     pub(crate) immutable_samplers: Option<ImmutableSamplersAnnotation>,
     pub(crate) slot_name: Option<SlotNameAnnotation>,
     pub(crate) semantic: Option<SemanticAnnotation>,
+    pub(crate) vertex_formats: Option<VertexFormatsAnnotation>,
 }
 
 impl BindingAnnotations {
@@ -116,6 +121,9 @@ impl BindingAnnotations {
                 }
                 "semantic" => {
                     parsed_annotations.semantic = Some(parse_ron_or_default(&annotation_data)?);
+                }
+                "vertex_formats" => {
+                    parsed_annotations.vertex_formats = Some(parse_ron_or_default(&annotation_data)?);
                 }
                 _ => {
                     return Err(format!(

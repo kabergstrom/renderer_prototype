@@ -145,6 +145,26 @@ impl std::fmt::Debug for RafxDescriptorSetArrayDx12 {
 unsafe impl Send for RafxDescriptorSetArrayDx12 {}
 unsafe impl Sync for RafxDescriptorSetArrayDx12 {}
 
+impl Drop for RafxDescriptorSetArrayDx12 {
+    fn drop(&mut self) {
+        let device_context = self
+            .root_signature
+            .dx12_root_signature()
+            .unwrap()
+            .device_context();
+        let heaps = &device_context.inner.heaps;
+
+        if let Some(info) = &self.cbv_srv_uav_table_info {
+            let count = info.stride * self.descriptor_set_array_length as u32;
+            heaps.gpu_cbv_srv_uav_heap.free(info.first_id, count);
+        }
+        if let Some(info) = &self.sampler_table_info {
+            let count = info.stride * self.descriptor_set_array_length as u32;
+            heaps.gpu_sampler_heap.free(info.first_id, count);
+        }
+    }
+}
+
 impl RafxDescriptorSetArrayDx12 {
     pub fn root_signature(&self) -> &RafxRootSignature {
         &self.root_signature
