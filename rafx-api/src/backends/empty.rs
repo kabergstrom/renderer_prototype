@@ -517,6 +517,14 @@ impl RafxCommandBufferEmpty {
     ) -> RafxResult<()> {
         unimplemented!()
     }
+    pub fn cmd_copy_texture_to_buffer(
+        &self,
+        _src_texture: &RafxTextureEmpty,
+        _dst_buffer: &RafxBufferEmpty,
+        _params: &RafxCmdCopyTextureToBufferParams,
+    ) -> RafxResult<()> {
+        unimplemented!()
+    }
     pub fn cmd_copy_texture_to_texture(
         &self,
         src_texture: &RafxTextureEmpty,

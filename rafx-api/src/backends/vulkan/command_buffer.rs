@@ -924,6 +924,69 @@ impl RafxCommandBufferVulkan {
         Ok(())
     }
 
+    pub fn cmd_copy_texture_to_buffer(
+        &self,
+        src_texture: &RafxTextureVulkan,
+        dst_buffer: &RafxBufferVulkan,
+        params: &RafxCmdCopyTextureToBufferParams,
+    ) -> RafxResult<()> {
+        let texture_def = src_texture.texture_def();
+
+        let copy_width = if params.buffer_extents.width != 0 {
+            params.buffer_extents.width
+        } else {
+            texture_def.extents.width
+        };
+        let copy_height = if params.buffer_extents.height != 0 {
+            params.buffer_extents.height
+        } else {
+            texture_def.extents.height
+        };
+        let copy_depth = if params.buffer_extents.depth != 0 {
+            params.buffer_extents.depth
+        } else {
+            texture_def.extents.depth
+        };
+        let copy_offset_x = params.copy_offset.width;
+        let copy_offset_y = params.copy_offset.height;
+        let width = 1.max(copy_width >> params.mip_level);
+        let height = 1.max(copy_height >> params.mip_level);
+        let depth = 1.max(copy_depth >> params.mip_level);
+
+        unsafe {
+            let copy = vk::BufferImageCopy {
+                image_extent: vk::Extent3D {
+                    width,
+                    height,
+                    depth,
+                },
+                image_offset: vk::Offset3D {
+                    x: copy_offset_x as _,
+                    y: copy_offset_y as _,
+                    z: 0,
+                },
+                image_subresource: vk::ImageSubresourceLayers {
+                    aspect_mask: src_texture.vk_aspect_mask(),
+                    mip_level: params.mip_level as u32,
+                    base_array_layer: params.array_layer as u32,
+                    layer_count: 1,
+                },
+                buffer_offset: params.buffer_offset,
+                buffer_image_height: copy_height,
+                buffer_row_length: copy_width,
+            };
+            self.device_context.device().cmd_copy_image_to_buffer(
+                self.vk_command_buffer,
+                src_texture.vk_image(),
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                dst_buffer.vk_buffer(),
+                &[copy],
+            );
+        }
+
+        Ok(())
+    }
+
     pub fn cmd_copy_texture_to_texture(
         &self,
         src_texture: &RafxTextureVulkan,

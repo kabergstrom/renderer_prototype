@@ -5,7 +5,7 @@ use crate::metal::{
 };
 use crate::{
     RafxBufferBarrier, RafxCmdCopyBufferToBufferParams, RafxCmdCopyBufferToTextureParams,
-    RafxCmdCopyTextureToTextureParams, RafxColorRenderTargetBinding, RafxCommandBufferDef,
+    RafxCmdCopyTextureToBufferParams, RafxCmdCopyTextureToTextureParams, RafxColorRenderTargetBinding, RafxCommandBufferDef,
     RafxDepthStencilRenderTargetBinding, RafxDescriptorIndex, RafxDrawIndexedIndirectCommand,
     RafxDrawIndirectCommand, RafxExtents3D, RafxIndexBufferBinding, RafxIndexType, RafxLoadOp,
     RafxPipelineType, RafxResourceState, RafxResult, RafxShaderStageFlags, RafxTextureBarrier,
@@ -1151,6 +1151,89 @@ impl RafxCommandBufferMetal {
                 y: params.copy_offset.height as _,
                 z: params.copy_offset.depth as _,
             },
+            MTLBlitOption::empty(),
+        );
+        Ok(())
+    }
+
+    pub fn cmd_copy_texture_to_buffer(
+        &self,
+        src_texture: &RafxTextureMetal,
+        dst_buffer: &RafxBufferMetal,
+        params: &RafxCmdCopyTextureToBufferParams,
+    ) -> RafxResult<()> {
+        let mut inner = self.inner.borrow_mut();
+        let blit_encoder = inner.blit_encoder.as_ref();
+        let blit_encoder = match blit_encoder {
+            Some(x) => x,
+            None => {
+                let result: RafxResult<&metal_rs::BlitCommandEncoderRef> =
+                    objc::rc::autoreleasepool(|| {
+                        Self::do_end_current_encoders(&self.queue, &mut *inner, false)?;
+                        let encoder = Self::create_blit_command_encoder(&mut *inner);
+                        inner.blit_encoder = Some(encoder);
+                        Ok(inner.blit_encoder.as_ref().unwrap().as_ref())
+                    });
+                result?
+            }
+        };
+
+        let texture_def = src_texture.texture_def();
+        let width = if params.buffer_extents.width != 0 {
+            params.buffer_extents.width
+        } else {
+            texture_def.extents.width
+        };
+        let height = if params.buffer_extents.height != 0 {
+            params.buffer_extents.height
+        } else {
+            texture_def.extents.height
+        };
+        let depth = if params.buffer_extents.depth != 0 {
+            params.buffer_extents.depth
+        } else {
+            texture_def.extents.depth
+        };
+        let width = 1.max(width >> params.mip_level);
+        let height = 1.max(height >> params.mip_level);
+        let depth = 1.max(depth >> params.mip_level);
+
+        let format = texture_def.format;
+        let block_size_in_bytes = format.block_or_pixel_size_in_bytes();
+        let block_width_in_pixels = format.block_width_in_pixels();
+        let texture_width_in_blocks =
+            rafx_base::memory::round_size_up_to_alignment_u32(width, block_width_in_pixels)
+                / block_width_in_pixels;
+
+        let device_info = self.queue.device_context().device_info();
+        let row_alignment = device_info.upload_texture_row_alignment;
+
+        let dest_bytes_per_row = rafx_base::memory::round_size_up_to_alignment_u32(
+            texture_width_in_blocks * block_size_in_bytes,
+            row_alignment,
+        );
+        let dest_bytes_per_image = height * dest_bytes_per_row;
+
+        let source_size = MTLSize {
+            width: width as _,
+            height: height as _,
+            depth: depth as _,
+        };
+
+        blit_encoder.copy_from_texture_to_buffer(
+            src_texture.metal_texture(),
+            params.array_layer as _,
+            params.mip_level as _,
+            MTLOrigin {
+                x: params.copy_offset.width as _,
+                y: params.copy_offset.height as _,
+                z: params.copy_offset.depth as _,
+            },
+            source_size,
+            dst_buffer.metal_buffer(),
+            params.buffer_offset as _,
+            dest_bytes_per_row as _,
+            dest_bytes_per_image as _,
             MTLBlitOption::empty(),
         );
         Ok(())

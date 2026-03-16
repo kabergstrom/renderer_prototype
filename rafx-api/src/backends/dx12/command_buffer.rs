@@ -5,7 +5,7 @@ use crate::dx12::{
 };
 use crate::{
     RafxBarrierQueueTransition, RafxBufferBarrier, RafxCmdCopyBufferToBufferParams,
-    RafxCmdCopyBufferToTextureParams, RafxCmdCopyTextureToTextureParams,
+    RafxCmdCopyBufferToTextureParams, RafxCmdCopyTextureToBufferParams, RafxCmdCopyTextureToTextureParams,
     RafxColorRenderTargetBinding, RafxCommandBufferDef, RafxDepthStencilRenderTargetBinding,
     RafxDescriptorIndex, RafxExtents3D, RafxIndexBufferBinding, RafxIndexType, RafxLoadOp,
     RafxMemoryUsage, RafxPipelineType, RafxQueueType, RafxResourceState, RafxResourceType,
@@ -1126,6 +1126,81 @@ impl RafxCommandBufferDx12 {
             inner
                 .command_list
                 .CopyTextureRegion(&dst, dst_x, dst_y, 0, &src, src_box);
+        }
+
+        Ok(())
+    }
+
+    pub fn cmd_copy_texture_to_buffer(
+        &self,
+        src_texture: &RafxTextureDx12,
+        dst_buffer: &RafxBufferDx12,
+        params: &RafxCmdCopyTextureToBufferParams,
+    ) -> RafxResult<()> {
+        let inner = self.inner.borrow_mut();
+
+        let subresource = super::internal::dx12_subresource_index(
+            params.mip_level,
+            params.array_layer,
+            0,
+            src_texture.texture_def().mip_count,
+            src_texture.texture_def().array_length,
+        );
+
+        let desc = unsafe { src_texture.dx12_resource().GetDesc() };
+
+        let mut num_rows: u32 = 0;
+        let mut row_size_in_bytes: u64 = 0;
+        let mut total_bytes: u64 = 0;
+
+        let mut placed_footprint = d3d12::D3D12_PLACED_SUBRESOURCE_FOOTPRINT::default();
+        unsafe {
+            self.queue
+                .device_context()
+                .d3d12_device()
+                .GetCopyableFootprints(
+                    &desc as *const _,
+                    subresource,
+                    1,
+                    params.buffer_offset,
+                    Some(&mut placed_footprint),
+                    Some(&mut num_rows as *mut _),
+                    Some(&mut row_size_in_bytes as *mut _),
+                    Some(&mut total_bytes as *mut _),
+                );
+        }
+
+        placed_footprint.Offset = params.buffer_offset;
+
+        // Src = texture (SUBRESOURCE_INDEX)
+        let mut src = d3d12::D3D12_TEXTURE_COPY_LOCATION::default();
+        src.Type = d3d12::D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        src.pResource = ::windows::core::ManuallyDrop::new(src_texture.dx12_resource());
+        src.Anonymous.SubresourceIndex = subresource;
+
+        // Dst = buffer (PLACED_FOOTPRINT)
+        let mut dst = d3d12::D3D12_TEXTURE_COPY_LOCATION::default();
+        dst.Type = d3d12::D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        dst.pResource = ::windows::core::ManuallyDrop::new(dst_buffer.dx12_resource());
+        dst.Anonymous.PlacedFootprint = placed_footprint;
+
+        let has_extents = params.buffer_extents.width > 0 || params.buffer_extents.height > 0 || params.buffer_extents.depth > 0;
+        let mut src_box = d3d12::D3D12_BOX::default();
+        src_box.left = params.copy_offset.width;
+        src_box.top = params.copy_offset.height;
+        src_box.right = params.copy_offset.width + params.buffer_extents.width;
+        src_box.bottom = params.copy_offset.height + params.buffer_extents.height;
+        src_box.back = if params.buffer_extents.depth > 0 { params.buffer_extents.depth } else { 1 };
+        let src_box: Option<*const d3d12::D3D12_BOX> = if has_extents {
+            Some(std::ptr::addr_of!(src_box))
+        } else {
+            None
+        };
+
+        unsafe {
+            inner
+                .command_list
+                .CopyTextureRegion(&dst, 0, 0, 0, &src, src_box);
         }
 
         Ok(())

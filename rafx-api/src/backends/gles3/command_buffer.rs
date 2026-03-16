@@ -7,7 +7,7 @@ use crate::gles3::{
 };
 use crate::{
     RafxBufferBarrier, RafxCmdCopyBufferToBufferParams, RafxCmdCopyBufferToTextureParams,
-    RafxColorFlags, RafxColorRenderTargetBinding, RafxCommandBufferDef,
+    RafxCmdCopyTextureToBufferParams, RafxColorFlags, RafxColorRenderTargetBinding, RafxCommandBufferDef,
     RafxDepthStencilRenderTargetBinding, RafxExtents3D, RafxIndexBufferBinding, RafxIndexType,
     RafxLoadOp, RafxResourceType, RafxResult, RafxTextureBarrier, RafxVertexBufferBinding,
     MAX_DESCRIPTOR_SET_LAYOUTS,
@@ -1172,5 +1172,14 @@ impl RafxCommandBufferGles3 {
             Some(&buffer_ptr),
         )?;
         gl_context.gl_bind_texture(dst_texture.gl_target(), NONE_TEXTURE)
+    }
+
+    pub fn cmd_copy_texture_to_buffer(
+        &self,
+        _src_texture: &RafxTextureGles3,
+        _dst_buffer: &RafxBufferGles3,
+        _params: &RafxCmdCopyTextureToBufferParams,
+    ) -> RafxResult<()> {
+        unimplemented!()
     }
 }

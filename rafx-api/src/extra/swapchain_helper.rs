@@ -49,14 +49,20 @@ impl RafxSwapchainHelperSharedState {
         swapchain: Arc<Mutex<RafxSwapchain>>,
     ) -> RafxResult<Self> {
         let sync_primitive_count = crate::MAX_FRAMES_IN_FLIGHT + 1;
+        // render_finished semaphores are indexed by swapchain image index, not
+        // sync frame index. A presentation semaphore is only safe to reuse once
+        // the image it presented is re-acquired, so there must be one per image.
+        let swapchain_image_count = swapchain.lock().unwrap().image_count();
         let mut image_available_semaphores = Vec::with_capacity(sync_primitive_count);
-        let mut render_finished_semaphores = Vec::with_capacity(sync_primitive_count);
+        let mut render_finished_semaphores = Vec::with_capacity(swapchain_image_count);
         let mut in_flight_fences = Vec::with_capacity(sync_primitive_count);
 
         for _ in 0..sync_primitive_count {
             image_available_semaphores.push(device_context.create_semaphore()?);
-            render_finished_semaphores.push(device_context.create_semaphore()?);
             in_flight_fences.push(device_context.create_fence()?);
+        }
+        for _ in 0..swapchain_image_count {
+            render_finished_semaphores.push(device_context.create_semaphore()?);
         }
 
         let (result_tx, result_rx) = crossbeam_channel::unbounded();
@@ -167,7 +173,8 @@ impl RafxPresentableFrame {
         let mut submit_wait_semaphores =
             vec![&shared_state.image_available_semaphores[sync_frame_index]];
         submit_wait_semaphores.extend_from_slice(wait_semaphores);
-        let signal_semaphores = [&shared_state.render_finished_semaphores[sync_frame_index]];
+        let image_index = self.swapchain_image.swapchain_image_index as usize;
+        let signal_semaphores = [&shared_state.render_finished_semaphores[image_index]];
 
         queue.submit_with_timeline(
             command_buffers,
@@ -234,12 +241,15 @@ impl RafxPresentableFrame {
         assert!(self.sync_frame_index == sync_frame_index);
 
         let frame_fence = &shared_state.in_flight_fences[sync_frame_index];
-        // let wait_semaphores = [&shared_state.image_available_semaphores[sync_frame_index]];
         // TODO don't allocate here
         let mut submit_wait_semaphores =
             vec![&shared_state.image_available_semaphores[sync_frame_index]];
         submit_wait_semaphores.extend_from_slice(wait_semaphores);
-        let signal_semaphores = [&shared_state.render_finished_semaphores[sync_frame_index]];
+        // Index by swapchain image, not sync frame. The presentation engine
+        // holds this semaphore until the image is re-acquired, so it's only
+        // safe to reuse once that specific image comes back.
+        let image_index = self.swapchain_image.swapchain_image_index as usize;
+        let signal_semaphores = [&shared_state.render_finished_semaphores[image_index]];
 
         queue.submit(
             command_buffers,

@@ -131,6 +131,7 @@ impl RafxBufferVulkan {
 
         if buffer_def.memory_usage == RafxMemoryUsage::GpuOnly
             || buffer_def.memory_usage == RafxMemoryUsage::CpuToGpu
+            || buffer_def.memory_usage == RafxMemoryUsage::GpuToCpu
         {
             usage_flags |= vk::BufferUsageFlags::TRANSFER_DST;
         }
