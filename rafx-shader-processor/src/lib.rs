@@ -1054,6 +1054,14 @@ fn write_output_file<C: AsRef<[u8]>>(
     contents: C,
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(path.parent().unwrap())?;
+    if cfg!(target_os = "windows") {
+        // Normalize to CRLF on Windows so generated files match the repo's line endings.
+        let bytes = contents.as_ref();
+        if let Ok(text) = std::str::from_utf8(bytes) {
+            let crlf = text.replace('\n', "\r\n").replace("\r\r\n", "\r\n");
+            return std::fs::write(path, crlf);
+        }
+    }
     std::fs::write(path, contents)
 }
 
