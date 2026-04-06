@@ -1,5 +1,7 @@
 #[cfg(feature = "rafx-dx12")]
 use crate::dx12::RafxTimelineSemaphoreDx12;
+#[cfg(feature = "rafx-metal")]
+use crate::metal::RafxTimelineSemaphoreMetal;
 #[cfg(any(
     feature = "rafx-empty",
     not(any(
@@ -24,6 +26,8 @@ use crate::RafxResult;
 pub enum RafxTimelineSemaphore {
     #[cfg(feature = "rafx-dx12")]
     Dx12(RafxTimelineSemaphoreDx12),
+    #[cfg(feature = "rafx-metal")]
+    Metal(RafxTimelineSemaphoreMetal),
     #[cfg(feature = "rafx-vulkan")]
     Vk(RafxTimelineSemaphoreVulkan),
     #[cfg(any(
@@ -46,6 +50,8 @@ impl RafxTimelineSemaphore {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxTimelineSemaphore::Dx12(inner) => Some(inner),
+            #[cfg(feature = "rafx-metal")]
+            RafxTimelineSemaphore::Metal(_) => None,
             #[cfg(feature = "rafx-vulkan")]
             RafxTimelineSemaphore::Vk(_) => None,
             #[cfg(any(
@@ -68,8 +74,34 @@ impl RafxTimelineSemaphore {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxTimelineSemaphore::Dx12(_) => None,
+            #[cfg(feature = "rafx-metal")]
+            RafxTimelineSemaphore::Metal(_) => None,
             #[cfg(feature = "rafx-vulkan")]
             RafxTimelineSemaphore::Vk(inner) => Some(inner),
+            #[cfg(any(
+                feature = "rafx-empty",
+                not(any(
+                    feature = "rafx-dx12",
+                    feature = "rafx-metal",
+                    feature = "rafx-vulkan",
+                    feature = "rafx-gles2",
+                    feature = "rafx-gles3"
+                ))
+            ))]
+            RafxTimelineSemaphore::Empty(_) => None,
+        }
+    }
+
+    /// Get the underlying Metal API object.
+    #[cfg(feature = "rafx-metal")]
+    pub fn metal_timeline_semaphore(&self) -> Option<&RafxTimelineSemaphoreMetal> {
+        match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxTimelineSemaphore::Dx12(_) => None,
+            #[cfg(feature = "rafx-metal")]
+            RafxTimelineSemaphore::Metal(inner) => Some(inner),
+            #[cfg(feature = "rafx-vulkan")]
+            RafxTimelineSemaphore::Vk(_) => None,
             #[cfg(any(
                 feature = "rafx-empty",
                 not(any(
@@ -89,6 +121,8 @@ impl RafxTimelineSemaphore {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxTimelineSemaphore::Dx12(inner) => inner.value(),
+            #[cfg(feature = "rafx-metal")]
+            RafxTimelineSemaphore::Metal(inner) => inner.value(),
             #[cfg(feature = "rafx-vulkan")]
             RafxTimelineSemaphore::Vk(inner) => inner.value(),
             #[cfg(any(
@@ -110,6 +144,8 @@ impl RafxTimelineSemaphore {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxTimelineSemaphore::Dx12(inner) => inner.wait(value, timeout_ns),
+            #[cfg(feature = "rafx-metal")]
+            RafxTimelineSemaphore::Metal(inner) => inner.wait(value, timeout_ns),
             #[cfg(feature = "rafx-vulkan")]
             RafxTimelineSemaphore::Vk(inner) => inner.wait(value, timeout_ns),
             #[cfg(any(
@@ -131,6 +167,8 @@ impl RafxTimelineSemaphore {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxTimelineSemaphore::Dx12(inner) => inner.signal(value),
+            #[cfg(feature = "rafx-metal")]
+            RafxTimelineSemaphore::Metal(inner) => inner.signal(value),
             #[cfg(feature = "rafx-vulkan")]
             RafxTimelineSemaphore::Vk(inner) => inner.signal(value),
             #[cfg(any(

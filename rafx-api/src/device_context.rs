@@ -314,6 +314,10 @@ impl RafxDeviceContext {
             RafxDeviceContext::Dx12(inner) => RafxTimelineSemaphore::Dx12(
                 crate::dx12::RafxTimelineSemaphoreDx12::new(inner, _initial_value)?,
             ),
+            #[cfg(feature = "rafx-metal")]
+            RafxDeviceContext::Metal(inner) => RafxTimelineSemaphore::Metal(
+                crate::metal::RafxTimelineSemaphoreMetal::new(inner, _initial_value)?,
+            ),
             #[cfg(feature = "rafx-vulkan")]
             RafxDeviceContext::Vk(inner) => RafxTimelineSemaphore::Vk(
                 crate::vulkan::RafxTimelineSemaphoreVulkan::new(inner, _initial_value)?,

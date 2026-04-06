@@ -234,6 +234,7 @@ impl RafxSwapchainMetal {
                     resource_type,
                     sample_count: RafxSampleCount::SampleCount1,
                     dimensions: RafxTextureDimensions::Dim2D,
+                    clear_value: [0.0; 4],
                 },
             )?;
 
