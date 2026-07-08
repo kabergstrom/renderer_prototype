@@ -426,14 +426,29 @@ impl RafxSwapchainHelper {
     ) -> RafxResult<()> {
         self.shared_state.as_ref().unwrap().in_flight_fences[sync_frame_index].wait()
     }
+    /// Global (monotonic) frame index, advanced once per presented frame.
+    /// Restarts from 0 when the swapchain shared state is recreated.
+    pub fn incrementing_frame_index(&self) -> usize {
+        self.shared_state
+            .as_ref()
+            .unwrap()
+            .global_frame_index
+            .load(Ordering::Relaxed)
+    }
+
     pub fn is_sync_frame_idle(
         &self,
         sync_frame_index: usize,
     ) -> RafxResult<bool> {
+        // Unsubmitted counts as idle: acquire_next_image wait_for_fences the
+        // slot's fence before reuse (clearing `submitted`), and with
+        // vsync-locked pacing the fence often signals only moments before
+        // that wait — an external poll almost never observes Complete. Once
+        // the fence is unsubmitted there is no in-flight work on the slot.
         Ok(
             self.shared_state.as_ref().unwrap().in_flight_fences[sync_frame_index]
                 .get_fence_status()?
-                == RafxFenceStatus::Complete,
+                != RafxFenceStatus::Incomplete,
         )
     }
 
@@ -629,7 +644,12 @@ impl RafxSwapchainHelper {
 
 impl Drop for RafxSwapchainHelper {
     fn drop(&mut self) {
-        // This will be a no-op if destroy() was already called
-        self.destroy(None).unwrap();
+        // This will be a no-op if destroy() was already called.
+        // Do not unwrap: during device-lost recovery the swapchain teardown
+        // itself returns VK_ERROR_DEVICE_LOST, and panicking here kills the
+        // process mid-recovery.
+        if let Err(e) = self.destroy(None) {
+            log::error!("RafxSwapchainHelper destroy failed during drop: {:?}", e);
+        }
     }
 }
