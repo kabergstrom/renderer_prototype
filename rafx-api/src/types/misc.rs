@@ -968,6 +968,9 @@ pub enum RafxTextureBindType {
     Srv,
     // stencil?
     SrvStencil,
+    // Sample a depth texture that is simultaneously bound as a read-only depth
+    // attachment (descriptor layout DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+    SrvDepthReadOnly,
     // Bind all mip levels of the 0th provided texture
     UavMipChain,
     // Bind a particular mip slice of all provided textures

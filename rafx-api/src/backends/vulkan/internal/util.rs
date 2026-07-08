@@ -149,6 +149,10 @@ pub(crate) fn resource_state_to_access_flags(state: RafxResourceState) -> vk::Ac
         flags |= vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
     }
 
+    if state.intersects(RafxResourceState::DEPTH_READ) {
+        flags |= vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ;
+    }
+
     if state.intersects(RafxResourceState::SHADER_RESOURCE) {
         flags |= vk::AccessFlags::SHADER_READ;
     }
@@ -169,6 +173,9 @@ pub(crate) fn resource_state_to_image_layout(state: RafxResourceState) -> Option
         Some(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
     } else if state.intersects(RafxResourceState::DEPTH_WRITE) {
         Some(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    } else if state.intersects(RafxResourceState::DEPTH_READ) {
+        // Read-only depth attachment, optionally sampled in the same pass.
+        Some(vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL)
     } else if state.intersects(RafxResourceState::UNORDERED_ACCESS) {
         Some(vk::ImageLayout::GENERAL)
     } else if state.intersects(RafxResourceState::SHADER_RESOURCE) {

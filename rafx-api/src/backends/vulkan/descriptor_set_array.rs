@@ -316,6 +316,22 @@ impl RafxDescriptorSetArrayVulkan {
                     let image_info = &mut self.update_data.image_infos[next_index];
                     next_index += 1;
 
+                    if texture_bind_type == RafxTextureBindType::SrvDepthReadOnly {
+                        image_info.image_view = texture.vk_texture().unwrap().vk_srv_view().ok_or_else(|| {
+                            format!(
+                                "Tried to update binding {:?} (set: {:?} binding: {} name: {:?} type: {:?}) as RafxTextureBindType::SrvDepthReadOnly but there is no srv view",
+                                update.descriptor_key,
+                                descriptor.set_index,
+                                descriptor.binding,
+                                descriptor.name,
+                                descriptor.resource_type,
+                            )
+                        })?;
+                        image_info.image_layout =
+                            vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                        continue;
+                    }
+
                     if texture_bind_type == RafxTextureBindType::SrvStencil {
                         image_info.image_view = texture.vk_texture().unwrap().vk_srv_view_stencil().ok_or_else(|| {
                             format!(
@@ -383,6 +399,22 @@ impl RafxDescriptorSetArrayVulkan {
                 for texture in textures {
                     let image_info = &mut self.update_data.image_infos[next_index];
                     next_index += 1;
+
+                    if texture_bind_type == RafxTextureBindType::SrvDepthReadOnly {
+                        image_info.image_view = texture.vk_texture().unwrap().vk_srv_view().ok_or_else(|| {
+                            format!(
+                                "Tried to update binding {:?} (set: {:?} binding: {} name: {:?} type: {:?}) as RafxTextureBindType::SrvDepthReadOnly but there is no srv view",
+                                update.descriptor_key,
+                                descriptor.set_index,
+                                descriptor.binding,
+                                descriptor.name,
+                                descriptor.resource_type,
+                            )
+                        })?;
+                        image_info.image_layout =
+                            vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                        continue;
+                    }
 
                     if texture_bind_type == RafxTextureBindType::SrvStencil {
                         image_info.image_view = texture.vk_texture().unwrap().vk_srv_view_stencil().ok_or_else(|| {

@@ -177,6 +177,18 @@ impl RafxCommandBuffer {
         color_targets: &[RafxColorRenderTargetBinding],
         depth_target: Option<RafxDepthStencilRenderTargetBinding>,
     ) -> RafxResult<()> {
+        self.cmd_begin_render_pass_ex(color_targets, depth_target, false)
+    }
+
+    /// Like cmd_begin_render_pass, but `depth_read_only` marks the depth attachment
+    /// read-only so it may simultaneously be sampled in the pass (Vulkan: uses
+    /// DEPTH_STENCIL_READ_ONLY_OPTIMAL; other backends ignore the flag).
+    pub fn cmd_begin_render_pass_ex(
+        &self,
+        color_targets: &[RafxColorRenderTargetBinding],
+        depth_target: Option<RafxDepthStencilRenderTargetBinding>,
+        #[allow(unused_variables)] depth_read_only: bool,
+    ) -> RafxResult<()> {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxCommandBuffer::Dx12(inner) => {
@@ -184,7 +196,7 @@ impl RafxCommandBuffer {
             }
             #[cfg(feature = "rafx-vulkan")]
             RafxCommandBuffer::Vk(inner) => {
-                inner.cmd_begin_render_pass(color_targets, depth_target)
+                inner.cmd_begin_render_pass_ex(color_targets, depth_target, depth_read_only)
             }
             #[cfg(feature = "rafx-metal")]
             RafxCommandBuffer::Metal(inner) => {

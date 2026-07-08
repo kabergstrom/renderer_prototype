@@ -110,6 +110,19 @@ impl RafxCommandBufferVulkan {
         color_targets: &[RafxColorRenderTargetBinding],
         depth_target: Option<RafxDepthStencilRenderTargetBinding>,
     ) -> RafxResult<()> {
+        self.cmd_begin_render_pass_ex(color_targets, depth_target, false)
+    }
+
+    /// Like cmd_begin_render_pass, but `depth_read_only` selects a read-only depth
+    /// attachment layout so the same depth texture may be sampled within the pass.
+    /// The caller is responsible for transitioning the texture to
+    /// DEPTH_READ | SHADER_RESOURCE state beforehand.
+    pub fn cmd_begin_render_pass_ex(
+        &self,
+        color_targets: &[RafxColorRenderTargetBinding],
+        depth_target: Option<RafxDepthStencilRenderTargetBinding>,
+        depth_read_only: bool,
+    ) -> RafxResult<()> {
         if self.has_active_renderpass.load(Ordering::Relaxed) {
             self.cmd_end_render_pass()?;
         }
@@ -126,6 +139,7 @@ impl RafxCommandBufferVulkan {
                 &self.device_context,
                 color_targets,
                 depth_target.as_ref(),
+                depth_read_only,
             )?;
             let framebuffer = resource_cache.framebuffer_cache.get_or_create_framebuffer(
                 &self.device_context,
@@ -167,16 +181,21 @@ impl RafxCommandBufferVulkan {
                     .unwrap()
                     .take_initial_undefined_layout()
                 {
+                    let new_state = if depth_read_only {
+                        RafxResourceState::DEPTH_READ | RafxResourceState::SHADER_RESOURCE
+                    } else {
+                        RafxResourceState::DEPTH_WRITE
+                    };
                     log::trace!(
                         "Transition RT {:?} from {:?} to {:?}",
                         depth_target,
                         RafxResourceState::UNDEFINED,
-                        RafxResourceState::DEPTH_WRITE
+                        new_state
                     );
                     barriers.push(RafxTextureBarrier::state_transition(
                         &depth_target.texture,
                         RafxResourceState::UNDEFINED,
-                        RafxResourceState::DEPTH_WRITE,
+                        new_state,
                     ));
                 }
             }

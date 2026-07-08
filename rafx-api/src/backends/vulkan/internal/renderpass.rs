@@ -22,6 +22,8 @@ pub(crate) struct RafxRenderpassVulkanDepthAttachment {
     pub(crate) stencil_load_op: RafxLoadOp,
     pub(crate) depth_store_op: RafxStoreOp,
     pub(crate) stencil_store_op: RafxStoreOp,
+    // Attachment is not written; layout allows sampling it in the same pass.
+    pub(crate) read_only: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -146,6 +148,11 @@ impl RafxRenderpassVulkan {
         if let Some(depth_attachment) = &renderpass_def.depth_attachment {
             assert_ne!(depth_attachment.format, RafxFormat::UNDEFINED);
             let attachment_index = attachments.len() as u32;
+            let depth_layout = if depth_attachment.read_only {
+                vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL
+            } else {
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+            };
             attachments.push(
                 vk::AttachmentDescription::builder()
                     .format(depth_attachment.format.into())
@@ -154,15 +161,15 @@ impl RafxRenderpassVulkan {
                     .store_op(depth_attachment.depth_store_op.into())
                     .stencil_load_op(depth_attachment.stencil_load_op.into())
                     .stencil_store_op(depth_attachment.stencil_store_op.into())
-                    .initial_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                    .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                    .initial_layout(depth_layout)
+                    .final_layout(depth_layout)
                     .build(),
             );
 
             depth_stencil_attachment_ref = Some(
                 vk::AttachmentReference::builder()
                     .attachment(attachment_index)
-                    .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                    .layout(depth_layout)
                     .build(),
             );
         }

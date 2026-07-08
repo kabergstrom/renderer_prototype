@@ -95,6 +95,8 @@ impl RafxPipelineVulkan {
                 stencil_load_op: Default::default(),
                 depth_store_op: Default::default(),
                 stencil_store_op: Default::default(),
+                // Layouts don't affect single-subpass renderpass compatibility.
+                read_only: false,
             })
         } else {
             None

@@ -23,6 +23,7 @@ impl RafxRenderpassVulkanCache {
     pub(crate) fn renderpass_hash(
         color_targets: &[RafxColorRenderTargetBinding],
         depth_target: Option<&RafxDepthStencilRenderTargetBinding>,
+        depth_read_only: bool,
     ) -> u64 {
         let mut hasher = FnvHasher::default();
         for color_target in color_targets {
@@ -40,6 +41,7 @@ impl RafxRenderpassVulkanCache {
             depth_target.clear_value.hash(&mut hasher);
             depth_target.stencil_load_op.hash(&mut hasher);
             depth_target.depth_load_op.hash(&mut hasher);
+            depth_read_only.hash(&mut hasher);
         }
         hasher.finish()
     }
@@ -48,6 +50,7 @@ impl RafxRenderpassVulkanCache {
         device_context: &RafxDeviceContextVulkan,
         color_targets: &[RafxColorRenderTargetBinding],
         depth_target: Option<&RafxDepthStencilRenderTargetBinding>,
+        depth_read_only: bool,
     ) -> RafxResult<RafxRenderpassVulkan> {
         let sample_count = if let Some(depth_target) = &depth_target {
             depth_target.texture.texture_def().sample_count
@@ -87,6 +90,7 @@ impl RafxRenderpassVulkanCache {
                 stencil_load_op: x.stencil_load_op,
                 depth_store_op: x.depth_store_op,
                 stencil_store_op: x.stencil_store_op,
+                read_only: depth_read_only,
             });
 
         assert_eq!(color_attachments.len(), resolve_attachments.len());
@@ -106,14 +110,15 @@ impl RafxRenderpassVulkanCache {
         device_context: &RafxDeviceContextVulkan,
         color_targets: &[RafxColorRenderTargetBinding],
         depth_target: Option<&RafxDepthStencilRenderTargetBinding>,
+        depth_read_only: bool,
     ) -> RafxResult<RafxRenderpassVulkan> {
         //
         // Hash it
         //
-        let hash = Self::renderpass_hash(color_targets, depth_target);
+        let hash = Self::renderpass_hash(color_targets, depth_target, depth_read_only);
 
         self.cache.get_or_create(hash, || {
-            Self::create_renderpass(device_context, color_targets, depth_target)
+            Self::create_renderpass(device_context, color_targets, depth_target, depth_read_only)
         })
     }
 }
