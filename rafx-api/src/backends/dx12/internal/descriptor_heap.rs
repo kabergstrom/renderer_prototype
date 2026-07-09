@@ -188,10 +188,30 @@ impl Dx12DescriptorHeapInner {
         minimum_required_descriptors: u32,
     ) -> RafxResult<()> {
         let old_size = self.descriptor_count;
-        let new_size = next_power_of_two(old_size + minimum_required_descriptors);
+        let mut new_size = next_power_of_two(old_size + minimum_required_descriptors);
+        let shader_visible = self.gpu_first_handle.is_some();
+
+        // D3D12 hard caps for shader-visible heaps: 2048 samplers,
+        // 1,000,000 CBV/SRV/UAV (TIER_3 hardware may reject anything larger
+        // even though the spec allows it). Clamp instead of letting
+        // CreateDescriptorHeap fail, and error out early when even the
+        // clamped size cannot satisfy the request.
+        if shader_visible {
+            let cap = if self.heap_type == d3d12::D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER {
+                2048
+            } else {
+                1_000_000
+            };
+            new_size = new_size.min(cap);
+            if new_size < old_size + minimum_required_descriptors {
+                return Err(format!(
+                    "shader-visible descriptor heap (type {:?}) exhausted: {} in use, {} more requested, hard cap {}",
+                    self.heap_type, old_size, minimum_required_descriptors, cap
+                ))?;
+            }
+        }
 
         log::warn!("descriptor heap growing {} -> {}", old_size, new_size);
-        let shader_visible = self.gpu_first_handle.is_some();
 
         // Copy into the new heap
         //let new_heap = NonShaderVisibleDescriptorHeap::allocate(device, self.heap_type, new_size)?;

@@ -120,6 +120,20 @@ impl RafxRootSignatureDx12 {
         self.inner.name_to_descriptor_index.get(name).copied()
     }
 
+    /// Number of sampler-table descriptors in the given set layout (0 if none).
+    /// Shader-visible sampler heaps are capped at 2048 entries on D3D12, so
+    /// callers sizing descriptor set arrays need to account for sampler usage.
+    pub fn sampler_table_descriptor_count(
+        &self,
+        set_index: u32,
+    ) -> u32 {
+        self.inner
+            .layouts
+            .get(set_index as usize)
+            .and_then(|x| x.sampler_table_descriptor_count)
+            .unwrap_or(0)
+    }
+
     pub fn find_descriptor_by_binding(
         &self,
         set_index: u32,
