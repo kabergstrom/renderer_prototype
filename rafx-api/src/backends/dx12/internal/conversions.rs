@@ -585,7 +585,13 @@ pub fn dxgi_to_typeless(
         DxgiCommon::DXGI_FORMAT_R32_FLOAT => DxgiCommon::DXGI_FORMAT_R32_TYPELESS,
         DxgiCommon::DXGI_FORMAT_R32_UINT => DxgiCommon::DXGI_FORMAT_R32_TYPELESS,
         DxgiCommon::DXGI_FORMAT_R32_SINT => DxgiCommon::DXGI_FORMAT_R32_TYPELESS,
-        DxgiCommon::DXGI_FORMAT_R9G9B9E5_SHAREDEXP => DxgiCommon::DXGI_FORMAT_R32_TYPELESS,
+        // R9G9B9E5 and R11G11B10 have no typeless cast family (they are NOT
+        // castable from R32_TYPELESS — CreateShaderResourceView rejects it
+        // with DXGI_ERROR_INVALID_CALL): create resources fully qualified.
+        DxgiCommon::DXGI_FORMAT_R9G9B9E5_SHAREDEXP => {
+            DxgiCommon::DXGI_FORMAT_R9G9B9E5_SHAREDEXP
+        }
+        DxgiCommon::DXGI_FORMAT_R11G11B10_FLOAT => DxgiCommon::DXGI_FORMAT_R11G11B10_FLOAT,
         DxgiCommon::DXGI_FORMAT_D32_FLOAT => DxgiCommon::DXGI_FORMAT_R32_TYPELESS,
         DxgiCommon::DXGI_FORMAT_R32_TYPELESS => DxgiCommon::DXGI_FORMAT_R32_TYPELESS,
 

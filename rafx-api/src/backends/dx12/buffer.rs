@@ -229,7 +229,10 @@ impl RafxBufferDx12 {
             match buffer_def.memory_usage {
                 RafxMemoryUsage::CpuToGpu => RafxResourceState::GENERIC_READ,
                 RafxMemoryUsage::CpuOnly => RafxResourceState::GENERIC_READ,
-                RafxMemoryUsage::GpuToCpu => RafxResourceState::UNORDERED_ACCESS,
+                // READBACK-heap resources must start in COPY_DEST (D3D12
+                // rule) — UNORDERED_ACCESS here fails CreatePlacedResource
+                // with E_INVALIDARG.
+                RafxMemoryUsage::GpuToCpu => RafxResourceState::COPY_DST,
                 RafxMemoryUsage::GpuOnly => RafxResourceState::COPY_DST,
                 _ => unreachable!(),
             }

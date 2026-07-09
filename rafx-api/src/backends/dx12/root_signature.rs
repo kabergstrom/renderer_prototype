@@ -443,6 +443,23 @@ impl RafxRootSignatureDx12 {
             ranges: &mut Vec<d3d12::D3D12_DESCRIPTOR_RANGE1>,
             shader_stages: &mut RafxShaderStageFlags,
         ) -> u32 {
+            // Canonicalize range order: sort by (range type, register). The
+            // merged reflection list arrives in hash order; while the D3D12
+            // spec permits interleaved non-monotonic ranges, drivers have
+            // been observed to mis-resolve registers for such tables. A
+            // sorted order also keeps update_data offsets deterministic.
+            let mut descriptor_indices = descriptor_indices.to_vec();
+            descriptor_indices.sort_by_key(|di| {
+                let d = &descriptors[di.0 as usize];
+                let range_type =
+                    super::internal::conversions::resource_type_descriptor_range_type(
+                        d.resource_type,
+                    )
+                    .unwrap();
+                (range_type.0, d.register)
+            });
+            let descriptor_indices = &descriptor_indices[..];
+
             let mut total_descriptor_count = 0;
             for descriptor_index in descriptor_indices {
                 let descriptor = &mut descriptors[descriptor_index.0 as usize];

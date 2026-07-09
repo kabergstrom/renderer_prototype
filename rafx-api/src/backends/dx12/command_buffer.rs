@@ -1115,7 +1115,13 @@ impl RafxCommandBufferDx12 {
         let mut src_box = d3d12::D3D12_BOX::default();
         src_box.right = params.buffer_extents.width;
         src_box.bottom = params.buffer_extents.height;
-        src_box.back = if params.buffer_extents.depth > 0 { params.buffer_extents.depth } else { 1 };
+        // depth == 0 means "full depth" (matching the Vulkan backend's
+        // interpretation); the footprint's depth is already per-subresource.
+        src_box.back = if params.buffer_extents.depth > 0 {
+            params.buffer_extents.depth
+        } else {
+            placed_footprint.Footprint.Depth.max(1)
+        };
         let src_box: Option<*const d3d12::D3D12_BOX> = if has_extents {
             Some(std::ptr::addr_of!(src_box))
         } else {

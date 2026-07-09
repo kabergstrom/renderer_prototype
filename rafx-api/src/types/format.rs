@@ -673,6 +673,11 @@ impl Into<DxgiCommon::DXGI_FORMAT> for RafxFormat {
             // RafxFormat::A2B10G10R10_SSCALED_PACK32 => DxgiCommon::DXGI_FORMAT_A2B10G10R10_SSCALED_PACK32,
             // RafxFormat::A2B10G10R10_UINT_PACK32 => DxgiCommon::DXGI_FORMAT_A2B10G10R10_UINT_PACK32,
             // RafxFormat::A2B10G10R10_SINT_PACK32 => DxgiCommon::DXGI_FORMAT_A2B10G10R10_SINT_PACK32,
+            // VK packed formats store component 0 in the low bits, so these
+            // are bit-exact matches for DXGI's R-in-low-bits layouts.
+            RafxFormat::A2B10G10R10_UNORM_PACK32 => DxgiCommon::DXGI_FORMAT_R10G10B10A2_UNORM,
+            RafxFormat::B10G11R11_UFLOAT_PACK32 => DxgiCommon::DXGI_FORMAT_R11G11B10_FLOAT,
+            RafxFormat::E5B9G9R9_UFLOAT_PACK32 => DxgiCommon::DXGI_FORMAT_R9G9B9E5_SHAREDEXP,
             RafxFormat::R16_UNORM => DxgiCommon::DXGI_FORMAT_R16_UNORM,
             RafxFormat::R16_SNORM => DxgiCommon::DXGI_FORMAT_R16_SNORM,
             // RafxFormat::R16_USCALED => DxgiCommon::DXGI_FORMAT_R16_USCALED,

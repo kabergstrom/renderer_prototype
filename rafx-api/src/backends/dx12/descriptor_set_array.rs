@@ -596,7 +596,12 @@ impl RafxDescriptorSetArrayDx12 {
                 // Modify the update data
                 let mut next_index = table_info.first_id.0 + begin_index as u32;
                 match texture_bind_type {
-                    RafxTextureBindType::Srv | RafxTextureBindType::SrvStencil => {
+                    // SrvDepthReadOnly only affects the image layout stored in
+                    // the descriptor on Vulkan; dx12 resource states are
+                    // barrier-level, so it binds like a plain SRV here.
+                    RafxTextureBindType::Srv
+                    | RafxTextureBindType::SrvStencil
+                    | RafxTextureBindType::SrvDepthReadOnly => {
                         for texture in textures {
                             let descriptor_id = Dx12DescriptorId(next_index);
                             next_index += 1;
@@ -711,7 +716,6 @@ impl RafxDescriptorSetArrayDx12 {
                         );
                     }
                 } else if texture_bind_type == RafxTextureBindType::UavMipChain {
-                    unimplemented!(); // this might still be broken
                     let texture = textures.first().unwrap();
 
                     if texture.texture_def().mip_count > descriptor.element_count {
