@@ -317,6 +317,11 @@ impl RafxDeviceContextVulkan {
         &self.inner.device_info
     }
 
+    /// See [`crate::RafxDeviceContext::device_ref_count`].
+    pub fn device_ref_count(&self) -> usize {
+        Arc::strong_count(&self.inner)
+    }
+
     pub fn entry(&self) -> &VkEntry {
         &*self.inner.entry
     }
@@ -1640,12 +1645,37 @@ fn create_logical_device(
         })
         .collect();
 
-    // Check if timeline semaphore extension was requested
+    // Timeline semaphores: core in Vulkan 1.2, VK_KHR_timeline_semaphore
+    // before that. Enable the FEATURE whenever the physical device supports
+    // it — merely listing the extension (as callers used to have to do) does
+    // not enable it, and vkCreateSemaphore with SEMAPHORE_TYPE_TIMELINE is
+    // invalid without the feature bit.
     let timeline_semaphore_ext_name =
         CStr::from_bytes_with_nul(b"VK_KHR_timeline_semaphore\0").unwrap();
     let needs_timeline_semaphore = additional_device_extensions
         .iter()
         .any(|ext| ext.as_c_str() == timeline_semaphore_ext_name);
+
+    let timeline_semaphore_supported = {
+        let mut ts_query = vk::PhysicalDeviceTimelineSemaphoreFeatures::builder().build();
+        let mut features2 = vk::PhysicalDeviceFeatures2::builder().build();
+        features2.p_next = &mut ts_query as *mut _ as *mut std::ffi::c_void;
+        unsafe { instance.get_physical_device_features2(physical_device, &mut features2) };
+        ts_query.timeline_semaphore == vk::TRUE
+    };
+
+    if timeline_semaphore_supported && !needs_timeline_semaphore {
+        // Pre-1.2 drivers require the extension to be listed; 1.2+ drivers
+        // may or may not still advertise the KHR name, so add it only when
+        // the device lists it.
+        for extension in &physical_device_info.extension_properties {
+            let extension_name = unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) };
+            if extension_name == timeline_semaphore_ext_name {
+                device_extension_names.push(timeline_semaphore_ext_name.as_ptr());
+                break;
+            }
+        }
+    }
 
     let mut timeline_semaphore_features = vk::PhysicalDeviceTimelineSemaphoreFeatures::builder()
         .timeline_semaphore(true)
@@ -1656,7 +1686,7 @@ fn create_logical_device(
         .enabled_extension_names(&device_extension_names)
         .enabled_features(&physical_device_features);
 
-    if needs_timeline_semaphore {
+    if needs_timeline_semaphore || timeline_semaphore_supported {
         device_create_info = device_create_info.push_next(&mut timeline_semaphore_features);
     }
 

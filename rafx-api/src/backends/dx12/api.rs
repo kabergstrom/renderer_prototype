@@ -76,7 +76,6 @@ impl RafxApiDx12 {
             //inner.descriptor_heap.clear_pools(device_context.device());
             //inner.resource_cache.clear_caches();
 
-            #[cfg(debug_assertions)]
             #[cfg(feature = "track-device-contexts")]
             let _create_index = device_context.create_index;
 
@@ -90,12 +89,8 @@ impl RafxApiDx12 {
             match Arc::try_unwrap(inner) {
                 Ok(inner) => std::mem::drop(inner),
                 Err(_arc) => {
-                    Err(format!(
-                        "Could not destroy device, {} references to it exist",
-                        _strong_count
-                    ))?;
-
-                    #[cfg(debug_assertions)]
+                    // Dump surviving clones BEFORE the error return (this code
+                    // was dead when it sat after the `?`).
                     #[cfg(feature = "track-device-contexts")]
                     {
                         let mut all_contexts = _arc.all_contexts.lock().unwrap();
@@ -105,6 +100,11 @@ impl RafxApiDx12 {
                             log::warn!("context allocation: {}\n{:?}", k, v);
                         }
                     }
+
+                    Err(format!(
+                        "Could not destroy device, {} references to it exist",
+                        _strong_count
+                    ))?;
                 }
             }
         }

@@ -97,6 +97,22 @@ impl RafxDeviceContext {
         }
     }
 
+    /// Strong count of the backend's inner device Arc — i.e. how many
+    /// RafxDeviceContext clones (including those embedded in every GPU
+    /// object) currently reference the device. Diagnostic for device-lost
+    /// recovery, where the count must reach 1 (the RafxApi's own) before the
+    /// device can be destroyed. Includes `self`.
+    pub fn device_ref_count(&self) -> usize {
+        #[allow(unreachable_patterns)]
+        match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => inner.device_ref_count(),
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => inner.device_ref_count(),
+            _ => 0,
+        }
+    }
+
     pub fn api_type(&self) -> RafxApiType {
         match self {
             #[cfg(feature = "rafx-dx12")]

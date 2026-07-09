@@ -26,6 +26,51 @@ pub enum RafxError {
     GlError(u32),
 }
 
+impl RafxError {
+    /// True when this error means the GPU device is lost/removed/reset —
+    /// every GPU object is invalid and the device must be rebuilt. Callers
+    /// use this to route into device-lost recovery instead of treating the
+    /// error as a transient per-frame failure.
+    pub fn is_device_lost(&self) -> bool {
+        match self {
+            #[cfg(feature = "rafx-vulkan")]
+            RafxError::VkError(r) => *r == ash::vk::Result::ERROR_DEVICE_LOST,
+            #[cfg(feature = "rafx-dx12")]
+            RafxError::WindowsApiError(e) => Self::is_device_lost_hresult(e.code()),
+            #[cfg(feature = "rafx-dx12")]
+            RafxError::HResult(hr) => Self::is_device_lost_hresult(*hr),
+            _ => false,
+        }
+    }
+
+    #[cfg(feature = "rafx-dx12")]
+    fn is_device_lost_hresult(hr: windows::core::HRESULT) -> bool {
+        const DXGI_ERROR_DEVICE_HUNG: u32 = 0x887A0006;
+        const DXGI_ERROR_DEVICE_REMOVED: u32 = 0x887A0005;
+        const DXGI_ERROR_DEVICE_RESET: u32 = 0x887A0007;
+        const DXGI_ERROR_DRIVER_INTERNAL_ERROR: u32 = 0x887A0020;
+        matches!(
+            hr.0 as u32,
+            DXGI_ERROR_DEVICE_HUNG
+                | DXGI_ERROR_DEVICE_REMOVED
+                | DXGI_ERROR_DEVICE_RESET
+                | DXGI_ERROR_DRIVER_INTERNAL_ERROR
+        )
+    }
+
+    /// An error that classifies as device-lost on the active backend, for
+    /// fault-injection testing. Uses the backend's genuine error type so the
+    /// synthetic path flows through the same classification as a real loss.
+    #[allow(unreachable_code)]
+    pub fn synthetic_device_lost() -> Self {
+        #[cfg(feature = "rafx-vulkan")]
+        return RafxError::VkError(ash::vk::Result::ERROR_DEVICE_LOST);
+        #[cfg(feature = "rafx-dx12")]
+        return RafxError::HResult(windows::core::HRESULT(0x887A0005u32 as i32));
+        RafxError::StringError("synthetic device-lost (backend has no device-lost error)".into())
+    }
+}
+
 impl std::error::Error for RafxError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {

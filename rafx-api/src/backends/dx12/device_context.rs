@@ -216,7 +216,6 @@ fn create_device(
 }
 
 use crate::dx12::mipmap_resources::Dx12MipmapResources;
-#[cfg(debug_assertions)]
 #[cfg(feature = "track-device-contexts")]
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -246,11 +245,9 @@ pub struct RafxDeviceContextDx12Inner {
 
     destroyed: AtomicBool,
 
-    #[cfg(debug_assertions)]
     #[cfg(feature = "track-device-contexts")]
     next_create_index: AtomicU64,
 
-    #[cfg(debug_assertions)]
     #[cfg(feature = "track-device-contexts")]
     pub(crate) all_contexts: Mutex<fnv::FnvHashMap<u64, backtrace::Backtrace>>,
 }
@@ -322,7 +319,6 @@ impl RafxDeviceContextDx12Inner {
             max_vertex_attribute_count: 31,
         };
 
-        #[cfg(debug_assertions)]
         #[cfg(feature = "track-device-contexts")]
         let all_contexts = {
             let create_backtrace = backtrace::Backtrace::new_unresolved();
@@ -353,11 +349,9 @@ impl RafxDeviceContextDx12Inner {
 
             destroyed: AtomicBool::new(false),
 
-            #[cfg(debug_assertions)]
             #[cfg(feature = "track-device-contexts")]
             all_contexts: Mutex::new(all_contexts),
 
-            #[cfg(debug_assertions)]
             #[cfg(feature = "track-device-contexts")]
             next_create_index: AtomicU64::new(1),
         })
@@ -366,7 +360,6 @@ impl RafxDeviceContextDx12Inner {
 
 pub struct RafxDeviceContextDx12 {
     pub(crate) inner: Arc<RafxDeviceContextDx12Inner>,
-    #[cfg(debug_assertions)]
     #[cfg(feature = "track-device-contexts")]
     pub(crate) create_index: u64,
 }
@@ -382,7 +375,6 @@ impl std::fmt::Debug for RafxDeviceContextDx12 {
 
 impl Clone for RafxDeviceContextDx12 {
     fn clone(&self) -> Self {
-        #[cfg(debug_assertions)]
         #[cfg(feature = "track-device-contexts")]
         let create_index = {
             let create_index = self.inner.next_create_index.fetch_add(1, Ordering::Relaxed);
@@ -404,7 +396,6 @@ impl Clone for RafxDeviceContextDx12 {
 
         RafxDeviceContextDx12 {
             inner: self.inner.clone(),
-            #[cfg(debug_assertions)]
             #[cfg(feature = "track-device-contexts")]
             create_index,
         }
@@ -413,7 +404,6 @@ impl Clone for RafxDeviceContextDx12 {
 
 impl Drop for RafxDeviceContextDx12 {
     fn drop(&mut self) {
-        #[cfg(debug_assertions)]
         #[cfg(feature = "track-device-contexts")]
         {
             self.inner
@@ -436,6 +426,11 @@ impl RafxDeviceContextDx12 {
         &self.inner.device_info
     }
 
+    /// See [`crate::RafxDeviceContext::device_ref_count`].
+    pub fn device_ref_count(&self) -> usize {
+        Arc::strong_count(&self.inner)
+    }
+
     pub fn dxgi_factory(&self) -> &dxgi::IDXGIFactory4 {
         &self.inner.dxgi_factory
     }
@@ -450,6 +445,22 @@ impl RafxDeviceContextDx12 {
 
     pub fn allocator(&self) -> &Mutex<gpu_allocator::d3d12::Allocator> {
         &self.inner.allocator
+    }
+
+    /// Fault injection for device-lost recovery testing: triggers a REAL
+    /// device removal via ID3D12Device5::RemoveDevice. Every subsequent call
+    /// on this device fails with DXGI_ERROR_DEVICE_REMOVED, exactly like a
+    /// genuine TDR/driver removal (GetDeviceRemovedReason reports it).
+    pub fn trigger_device_removal(&self) {
+        match self.inner.d3d12_device.cast::<d3d12::ID3D12Device5>() {
+            Ok(device5) => unsafe {
+                log::warn!("triggering REAL device removal (ID3D12Device5::RemoveDevice)");
+                device5.RemoveDevice();
+            },
+            Err(e) => log::error!(
+                "trigger_device_removal: ID3D12Device5 unavailable ({e:?}) — no removal triggered"
+            ),
+        }
     }
 
     /// Drain all queued D3D12 debug layer messages and print them to stderr.
@@ -503,7 +514,6 @@ impl RafxDeviceContextDx12 {
     pub fn new(inner: Arc<RafxDeviceContextDx12Inner>) -> RafxResult<Self> {
         let dx12_device_context = RafxDeviceContextDx12 {
             inner,
-            #[cfg(debug_assertions)]
             #[cfg(feature = "track-device-contexts")]
             create_index: 0,
         };
