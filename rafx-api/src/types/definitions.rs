@@ -695,3 +695,10 @@ pub struct RafxDescriptorSetArrayDef<'a> {
     /// The number of descriptor sets in the array
     pub array_length: usize,
 }
+
+/// Used to create a `RafxQueryPool` of GPU timestamp queries
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RafxQueryPoolDef {
+    /// Number of timestamp query slots in the pool
+    pub query_count: u32,
+}

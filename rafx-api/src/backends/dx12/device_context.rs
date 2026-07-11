@@ -2,7 +2,8 @@ use crate::{
     RafxApiDefDx12, RafxBufferDef, RafxComputePipelineDef, RafxDescriptorSetArrayDef,
     RafxDeviceContext, RafxDeviceInfo, RafxDrawIndexedIndirectCommand, RafxDrawIndirectCommand,
     RafxError, RafxExternalSemaphoreHandle, RafxExternalTextureHandle, RafxFormat,
-    RafxGraphicsPipelineDef, RafxQueueType, RafxResourceType, RafxResult, RafxRootSignatureDef,
+    RafxGraphicsPipelineDef, RafxQueryPoolDef, RafxQueueType, RafxResourceType, RafxResult,
+    RafxRootSignatureDef,
     RafxSampleCount, RafxSamplerDef, RafxShaderModuleDefDx12, RafxShaderStageDef, RafxSwapchainDef,
     RafxTextureDef, RafxValidationMode,
 };
@@ -12,7 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::dx12::{
     RafxBufferDx12, RafxDescriptorSetArrayDx12, RafxDx12FeatureLevel, RafxFenceDx12,
-    RafxPipelineDx12, RafxQueueDx12, RafxRawImageDx12, RafxRootSignatureDx12, RafxSamplerDx12,
+    RafxPipelineDx12, RafxQueryPoolDx12, RafxQueueDx12, RafxRawImageDx12, RafxRootSignatureDx12, RafxSamplerDx12,
     RafxSemaphoreDx12, RafxShaderDx12, RafxShaderModuleDx12, RafxSwapchainDx12, RafxTextureDx12,
     RafxTimelineSemaphoreDx12,
 };
@@ -316,6 +317,7 @@ impl RafxDeviceContextDx12Inner {
             upload_texture_alignment: d3d12::D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT,
             upload_texture_row_alignment: d3d12::D3D12_TEXTURE_DATA_PITCH_ALIGNMENT,
             supports_clamp_to_border_color: true,
+            supports_gpu_timestamps: true,
             max_vertex_attribute_count: 31,
         };
 
@@ -533,6 +535,13 @@ impl RafxDeviceContextDx12 {
 
     pub fn create_fence(&self) -> RafxResult<RafxFenceDx12> {
         RafxFenceDx12::new(self)
+    }
+
+    pub fn create_query_pool(
+        &self,
+        query_pool_def: &RafxQueryPoolDef,
+    ) -> RafxResult<RafxQueryPoolDx12> {
+        RafxQueryPoolDx12::new(self, query_pool_def)
     }
 
     pub fn create_semaphore(&self) -> RafxResult<RafxSemaphoreDx12> {

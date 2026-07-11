@@ -1,7 +1,7 @@
 use crate::dx12::{
     Dx12DescriptorId, RafxBufferDx12, RafxCommandPoolDx12, RafxDescriptorSetArrayDx12,
-    RafxDescriptorSetHandleDx12, RafxPipelineDx12, RafxQueueDx12, RafxRootSignatureDx12,
-    RafxTextureDx12,
+    RafxDescriptorSetHandleDx12, RafxPipelineDx12, RafxQueryPoolDx12, RafxQueueDx12,
+    RafxRootSignatureDx12, RafxTextureDx12,
 };
 use crate::{
     RafxBarrierQueueTransition, RafxBufferBarrier, RafxCmdCopyBufferToBufferParams,
@@ -1282,6 +1282,57 @@ impl RafxCommandBufferDx12 {
             }
         }
 
+        Ok(())
+    }
+
+    /// No-op on dx12 — timestamp queries need no reset. Exists so callers
+    /// can record the vulkan-required reset unconditionally.
+    pub fn cmd_reset_query_pool(
+        &self,
+        _query_pool: &RafxQueryPoolDx12,
+    ) -> RafxResult<()> {
+        Ok(())
+    }
+
+    /// Write the GPU clock into the given query slot once all previously
+    /// submitted commands have completed. Valid inside or outside a render
+    /// pass.
+    pub fn cmd_write_timestamp(
+        &self,
+        query_pool: &RafxQueryPoolDx12,
+        query_index: u32,
+    ) -> RafxResult<()> {
+        let inner = self.inner.borrow();
+        unsafe {
+            inner.command_list.EndQuery(
+                query_pool.query_heap(),
+                d3d12::D3D12_QUERY_TYPE_TIMESTAMP,
+                query_index,
+            );
+        }
+        Ok(())
+    }
+
+    /// Copy query results into the pool's CPU-readable buffer. Must be
+    /// recorded after the frame's last cmd_write_timestamp, outside a render
+    /// pass.
+    pub fn cmd_resolve_query_pool(
+        &self,
+        query_pool: &RafxQueryPoolDx12,
+        first_query: u32,
+        query_count: u32,
+    ) -> RafxResult<()> {
+        let inner = self.inner.borrow();
+        unsafe {
+            inner.command_list.ResolveQueryData(
+                query_pool.query_heap(),
+                d3d12::D3D12_QUERY_TYPE_TIMESTAMP,
+                first_query,
+                query_count,
+                query_pool.readback_resource(),
+                first_query as u64 * std::mem::size_of::<u64>() as u64,
+            );
+        }
         Ok(())
     }
 

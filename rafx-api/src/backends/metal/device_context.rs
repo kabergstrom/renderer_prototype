@@ -58,6 +58,7 @@ impl RafxDeviceContextMetalInner {
             upload_texture_alignment: 16,
             upload_texture_row_alignment: 1,
             supports_clamp_to_border_color: true, //TODO: Check for iOS support
+            supports_gpu_timestamps: false,
             max_vertex_attribute_count: 31,
         };
 

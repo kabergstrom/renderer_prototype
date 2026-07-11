@@ -35,6 +35,12 @@ impl RafxDeviceContextEmpty {
     pub fn create_fence(&self) -> RafxResult<RafxFenceEmpty> {
         unimplemented!();
     }
+    pub fn create_query_pool(
+        &self,
+        _query_pool_def: &RafxQueryPoolDef,
+    ) -> RafxResult<RafxQueryPoolEmpty> {
+        unimplemented!();
+    }
     pub fn create_semaphore(&self) -> RafxResult<RafxSemaphoreEmpty> {
         unimplemented!();
     }
@@ -314,6 +320,23 @@ impl RafxQueueEmpty {
     pub fn wait_for_queue_idle(&self) -> RafxResult<()> {
         unimplemented!()
     }
+    pub fn timestamp_period_ns(&self) -> RafxResult<f32> {
+        unimplemented!()
+    }
+}
+
+pub struct RafxQueryPoolEmpty;
+impl RafxQueryPoolEmpty {
+    pub fn query_count(&self) -> u32 {
+        unimplemented!()
+    }
+    pub fn read_timestamps(
+        &self,
+        _first_query: u32,
+        _results: &mut [u64],
+    ) -> RafxResult<()> {
+        unimplemented!()
+    }
 }
 
 pub struct RafxCommandPoolEmpty;
@@ -353,6 +376,28 @@ impl RafxCommandBufferEmpty {
         unimplemented!()
     }
     pub fn cmd_end_render_pass(&self) -> RafxResult<()> {
+        unimplemented!()
+    }
+
+    pub fn cmd_reset_query_pool(
+        &self,
+        _query_pool: &RafxQueryPoolEmpty,
+    ) -> RafxResult<()> {
+        unimplemented!()
+    }
+    pub fn cmd_write_timestamp(
+        &self,
+        _query_pool: &RafxQueryPoolEmpty,
+        _query_index: u32,
+    ) -> RafxResult<()> {
+        unimplemented!()
+    }
+    pub fn cmd_resolve_query_pool(
+        &self,
+        _query_pool: &RafxQueryPoolEmpty,
+        _first_query: u32,
+        _query_count: u32,
+    ) -> RafxResult<()> {
         unimplemented!()
     }
 

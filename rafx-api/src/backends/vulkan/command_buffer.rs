@@ -1154,6 +1154,55 @@ impl RafxCommandBufferVulkan {
         Ok(())
     }
 
+    /// Reset all queries in the pool to unwritten state. Must be recorded
+    /// outside a render pass, and must run on the GPU before any of the
+    /// queries are written again — including their very first write.
+    pub fn cmd_reset_query_pool(
+        &self,
+        query_pool: &RafxQueryPoolVulkan,
+    ) -> RafxResult<()> {
+        unsafe {
+            self.device_context.device().cmd_reset_query_pool(
+                self.vk_command_buffer,
+                query_pool.vk_query_pool(),
+                0,
+                query_pool.query_count(),
+            );
+        }
+        Ok(())
+    }
+
+    /// Write the GPU clock into the given query slot once all previously
+    /// submitted commands have completed (bottom-of-pipe). Valid inside or
+    /// outside a render pass.
+    pub fn cmd_write_timestamp(
+        &self,
+        query_pool: &RafxQueryPoolVulkan,
+        query_index: u32,
+    ) -> RafxResult<()> {
+        unsafe {
+            self.device_context.device().cmd_write_timestamp(
+                self.vk_command_buffer,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                query_pool.vk_query_pool(),
+                query_index,
+            );
+        }
+        Ok(())
+    }
+
+    /// No-op on vulkan — results are fetched CPU-side by
+    /// `RafxQueryPoolVulkan::read_timestamps`. Exists so callers can record
+    /// the dx12-required resolve unconditionally.
+    pub fn cmd_resolve_query_pool(
+        &self,
+        _query_pool: &RafxQueryPoolVulkan,
+        _first_query: u32,
+        _query_count: u32,
+    ) -> RafxResult<()> {
+        Ok(())
+    }
+
     pub fn cmd_push_group_debug_name(
         &self,
         name: impl AsRef<str>,

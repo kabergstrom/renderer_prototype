@@ -86,6 +86,7 @@ impl RafxDeviceContextGles2Inner {
             upload_texture_alignment: pack_alignment,
             upload_texture_row_alignment: pack_alignment,
             supports_clamp_to_border_color: false, // requires GLES 3.2 or an extension
+            supports_gpu_timestamps: false,
             max_vertex_attribute_count,
         };
 

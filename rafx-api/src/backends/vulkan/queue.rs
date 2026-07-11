@@ -36,6 +36,12 @@ impl RafxQueueVulkan {
         &self.device_context
     }
 
+    /// Nanoseconds per GPU timestamp tick, for converting query results to
+    /// time. Gate on `RafxDeviceInfo::supports_gpu_timestamps`.
+    pub fn timestamp_period_ns(&self) -> RafxResult<f32> {
+        Ok(self.device_context.limits().timestamp_period)
+    }
+
     pub fn create_command_pool(
         &self,
         command_pool_def: &RafxCommandPoolDef,

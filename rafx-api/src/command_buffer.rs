@@ -24,7 +24,8 @@ use crate::{
     RafxCmdCopyBufferToTextureParams, RafxCmdCopyTextureToBufferParams, RafxCmdCopyTextureToTextureParams,
     RafxColorRenderTargetBinding, RafxDepthStencilRenderTargetBinding, RafxDescriptorIndex,
     RafxDescriptorSetArray, RafxDescriptorSetHandle, RafxIndexBufferBinding, RafxPipeline,
-    RafxResult, RafxRootSignature, RafxTexture, RafxTextureBarrier, RafxVertexBufferBinding,
+    RafxQueryPool, RafxResult, RafxRootSignature, RafxTexture, RafxTextureBarrier,
+    RafxVertexBufferBinding,
 };
 
 /// A list of commands recorded by the CPU and submitted to the GPU.
@@ -1219,6 +1220,148 @@ impl RafxCommandBuffer {
                 src_buffer.empty_buffer().unwrap(),
                 dst_buffer.empty_buffer().unwrap(),
                 params,
+            ),
+        }
+    }
+
+    /// Reset all timestamp queries in the pool. Must be recorded outside a
+    /// render pass, before the queries are written — including their first
+    /// use (vulkan requirement; no-op on dx12). See `RafxQueryPool`.
+    pub fn cmd_reset_query_pool(
+        &self,
+        query_pool: &RafxQueryPool,
+    ) -> RafxResult<()> {
+        match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxCommandBuffer::Dx12(inner) => {
+                inner.cmd_reset_query_pool(query_pool.dx12_query_pool().unwrap())
+            }
+            #[cfg(feature = "rafx-vulkan")]
+            RafxCommandBuffer::Vk(inner) => {
+                inner.cmd_reset_query_pool(query_pool.vk_query_pool().unwrap())
+            }
+            #[cfg(feature = "rafx-metal")]
+            RafxCommandBuffer::Metal(_) => {
+                Err("GPU timestamp queries are not implemented on the metal backend")?
+            }
+            #[cfg(feature = "rafx-gles2")]
+            RafxCommandBuffer::Gles2(_) => {
+                Err("GPU timestamp queries are not implemented on the gles2 backend")?
+            }
+            #[cfg(feature = "rafx-gles3")]
+            RafxCommandBuffer::Gles3(_) => {
+                Err("GPU timestamp queries are not implemented on the gles3 backend")?
+            }
+            #[cfg(any(
+                feature = "rafx-empty",
+                not(any(
+                    feature = "rafx-dx12",
+                    feature = "rafx-metal",
+                    feature = "rafx-vulkan",
+                    feature = "rafx-gles2",
+                    feature = "rafx-gles3"
+                ))
+            ))]
+            RafxCommandBuffer::Empty(inner) => {
+                inner.cmd_reset_query_pool(query_pool.empty_query_pool().unwrap())
+            }
+        }
+    }
+
+    /// Write the GPU clock into the given query slot once all previously
+    /// submitted commands have completed. Valid inside or outside a render
+    /// pass. See `RafxQueryPool`.
+    pub fn cmd_write_timestamp(
+        &self,
+        query_pool: &RafxQueryPool,
+        query_index: u32,
+    ) -> RafxResult<()> {
+        match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxCommandBuffer::Dx12(inner) => {
+                inner.cmd_write_timestamp(query_pool.dx12_query_pool().unwrap(), query_index)
+            }
+            #[cfg(feature = "rafx-vulkan")]
+            RafxCommandBuffer::Vk(inner) => {
+                inner.cmd_write_timestamp(query_pool.vk_query_pool().unwrap(), query_index)
+            }
+            #[cfg(feature = "rafx-metal")]
+            RafxCommandBuffer::Metal(_) => {
+                Err("GPU timestamp queries are not implemented on the metal backend")?
+            }
+            #[cfg(feature = "rafx-gles2")]
+            RafxCommandBuffer::Gles2(_) => {
+                Err("GPU timestamp queries are not implemented on the gles2 backend")?
+            }
+            #[cfg(feature = "rafx-gles3")]
+            RafxCommandBuffer::Gles3(_) => {
+                Err("GPU timestamp queries are not implemented on the gles3 backend")?
+            }
+            #[cfg(any(
+                feature = "rafx-empty",
+                not(any(
+                    feature = "rafx-dx12",
+                    feature = "rafx-metal",
+                    feature = "rafx-vulkan",
+                    feature = "rafx-gles2",
+                    feature = "rafx-gles3"
+                ))
+            ))]
+            RafxCommandBuffer::Empty(inner) => {
+                inner.cmd_write_timestamp(query_pool.empty_query_pool().unwrap(), query_index)
+            }
+        }
+    }
+
+    /// Make written timestamps readable by `RafxQueryPool::read_timestamps`.
+    /// Must be recorded after the last write, outside a render pass (dx12
+    /// copies the query heap to a readback buffer; no-op on vulkan). See
+    /// `RafxQueryPool`.
+    pub fn cmd_resolve_query_pool(
+        &self,
+        query_pool: &RafxQueryPool,
+        first_query: u32,
+        query_count: u32,
+    ) -> RafxResult<()> {
+        match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxCommandBuffer::Dx12(inner) => inner.cmd_resolve_query_pool(
+                query_pool.dx12_query_pool().unwrap(),
+                first_query,
+                query_count,
+            ),
+            #[cfg(feature = "rafx-vulkan")]
+            RafxCommandBuffer::Vk(inner) => inner.cmd_resolve_query_pool(
+                query_pool.vk_query_pool().unwrap(),
+                first_query,
+                query_count,
+            ),
+            #[cfg(feature = "rafx-metal")]
+            RafxCommandBuffer::Metal(_) => {
+                Err("GPU timestamp queries are not implemented on the metal backend")?
+            }
+            #[cfg(feature = "rafx-gles2")]
+            RafxCommandBuffer::Gles2(_) => {
+                Err("GPU timestamp queries are not implemented on the gles2 backend")?
+            }
+            #[cfg(feature = "rafx-gles3")]
+            RafxCommandBuffer::Gles3(_) => {
+                Err("GPU timestamp queries are not implemented on the gles3 backend")?
+            }
+            #[cfg(any(
+                feature = "rafx-empty",
+                not(any(
+                    feature = "rafx-dx12",
+                    feature = "rafx-metal",
+                    feature = "rafx-vulkan",
+                    feature = "rafx-gles2",
+                    feature = "rafx-gles3"
+                ))
+            ))]
+            RafxCommandBuffer::Empty(inner) => inner.cmd_resolve_query_pool(
+                query_pool.empty_query_pool().unwrap(),
+                first_query,
+                query_count,
             ),
         }
     }

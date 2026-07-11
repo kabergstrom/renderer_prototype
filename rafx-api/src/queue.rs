@@ -144,6 +144,41 @@ impl RafxQueue {
         }
     }
 
+    /// Nanoseconds per GPU timestamp tick on this queue, for converting
+    /// `RafxQueryPool::read_timestamps` results to time. Not supported on all
+    /// backends — gate on `RafxDeviceInfo::supports_gpu_timestamps`.
+    pub fn timestamp_period_ns(&self) -> RafxResult<f32> {
+        match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxQueue::Dx12(inner) => inner.timestamp_period_ns(),
+            #[cfg(feature = "rafx-vulkan")]
+            RafxQueue::Vk(inner) => inner.timestamp_period_ns(),
+            #[cfg(feature = "rafx-metal")]
+            RafxQueue::Metal(_) => {
+                Err("GPU timestamp queries are not implemented on the metal backend")?
+            }
+            #[cfg(feature = "rafx-gles2")]
+            RafxQueue::Gles2(_) => {
+                Err("GPU timestamp queries are not implemented on the gles2 backend")?
+            }
+            #[cfg(feature = "rafx-gles3")]
+            RafxQueue::Gles3(_) => {
+                Err("GPU timestamp queries are not implemented on the gles3 backend")?
+            }
+            #[cfg(any(
+                feature = "rafx-empty",
+                not(any(
+                    feature = "rafx-dx12",
+                    feature = "rafx-metal",
+                    feature = "rafx-vulkan",
+                    feature = "rafx-gles2",
+                    feature = "rafx-gles3"
+                ))
+            ))]
+            RafxQueue::Empty(inner) => inner.timestamp_period_ns(),
+        }
+    }
+
     /// Create a command pool for use with this queue
     pub fn create_command_pool(
         &self,

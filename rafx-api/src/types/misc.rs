@@ -65,6 +65,10 @@ pub struct RafxDeviceInfo {
     // Requires iOS 14.0, macOS 10.12
     pub supports_clamp_to_border_color: bool,
 
+    /// GPU timestamp queries (RafxQueryPool / cmd_write_timestamp) are
+    /// implemented and supported by the device. Currently vulkan + dx12.
+    pub supports_gpu_timestamps: bool,
+
     pub max_vertex_attribute_count: u32,
     //max_vertex_input_binding_count: u32,
     // max_root_signature_dwords: u32,

@@ -292,6 +292,50 @@ impl RafxDeviceContext {
         })
     }
 
+    /// Create a pool of GPU timestamp queries. Not supported on all backends
+    /// — gate on `RafxDeviceInfo::supports_gpu_timestamps`.
+    #[allow(unreachable_code)]
+    pub fn create_query_pool(
+        &self,
+        query_pool_def: &RafxQueryPoolDef,
+    ) -> RafxResult<RafxQueryPool> {
+        Ok(match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxDeviceContext::Dx12(inner) => {
+                RafxQueryPool::Dx12(inner.create_query_pool(query_pool_def)?)
+            }
+            #[cfg(feature = "rafx-vulkan")]
+            RafxDeviceContext::Vk(inner) => {
+                RafxQueryPool::Vk(inner.create_query_pool(query_pool_def)?)
+            }
+            #[cfg(feature = "rafx-metal")]
+            RafxDeviceContext::Metal(_) => {
+                return Err("GPU timestamp queries are not implemented on the metal backend")?
+            }
+            #[cfg(feature = "rafx-gles2")]
+            RafxDeviceContext::Gles2(_) => {
+                return Err("GPU timestamp queries are not implemented on the gles2 backend")?
+            }
+            #[cfg(feature = "rafx-gles3")]
+            RafxDeviceContext::Gles3(_) => {
+                return Err("GPU timestamp queries are not implemented on the gles3 backend")?
+            }
+            #[cfg(any(
+                feature = "rafx-empty",
+                not(any(
+                    feature = "rafx-dx12",
+                    feature = "rafx-metal",
+                    feature = "rafx-vulkan",
+                    feature = "rafx-gles2",
+                    feature = "rafx-gles3"
+                ))
+            ))]
+            RafxDeviceContext::Empty(inner) => {
+                RafxQueryPool::Empty(inner.create_query_pool(query_pool_def)?)
+            }
+        })
+    }
+
     /// Create a semaphore
     pub fn create_semaphore(&self) -> RafxResult<RafxSemaphore> {
         Ok(match self {

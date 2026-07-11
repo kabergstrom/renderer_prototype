@@ -31,6 +31,9 @@ pub use command_buffer::*;
 mod fence;
 pub use fence::*;
 
+mod query_pool;
+pub use query_pool::*;
+
 mod semaphore;
 pub use semaphore::*;
 

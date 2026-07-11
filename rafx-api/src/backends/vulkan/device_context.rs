@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::vulkan::{
     RafxBufferVulkan, RafxDescriptorSetArrayVulkan, RafxFenceVulkan, RafxPipelineVulkan,
-    RafxQueueVulkan, RafxRootSignatureVulkan, RafxSamplerVulkan, RafxSemaphoreVulkan,
-    RafxShaderModuleVulkan, RafxShaderVulkan, RafxSwapchainVulkan, RafxTextureVulkan,
+    RafxQueryPoolVulkan, RafxQueueVulkan, RafxRootSignatureVulkan, RafxSamplerVulkan,
+    RafxSemaphoreVulkan, RafxShaderModuleVulkan, RafxShaderVulkan, RafxSwapchainVulkan,
+    RafxTextureVulkan,
 };
 use ash::extensions::khr;
 use fnv::FnvHashMap;
@@ -191,6 +192,8 @@ impl RafxDeviceContextVulkanInner {
             upload_texture_alignment: limits.optimal_buffer_copy_offset_alignment as u32,
             upload_texture_row_alignment: limits.optimal_buffer_copy_row_pitch_alignment as u32,
             supports_clamp_to_border_color: true,
+            supports_gpu_timestamps: limits.timestamp_compute_and_graphics != 0
+                && limits.timestamp_period > 0.0,
             max_vertex_attribute_count: limits.max_vertex_input_attributes,
         };
 
@@ -390,6 +393,13 @@ impl RafxDeviceContextVulkan {
 
     pub fn create_fence(&self) -> RafxResult<RafxFenceVulkan> {
         RafxFenceVulkan::new(self)
+    }
+
+    pub fn create_query_pool(
+        &self,
+        query_pool_def: &RafxQueryPoolDef,
+    ) -> RafxResult<RafxQueryPoolVulkan> {
+        RafxQueryPoolVulkan::new(self, query_pool_def)
     }
 
     pub fn create_semaphore(&self) -> RafxResult<RafxSemaphoreVulkan> {
