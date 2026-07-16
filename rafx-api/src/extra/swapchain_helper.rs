@@ -123,34 +123,67 @@ impl RafxPresentableFrame {
     /// Submits the given command buffers and schedules the swapchain image to be presented after
     /// their completion
     pub fn present(
-        mut self,
+        self,
         queue: &RafxQueue,
         command_buffers: &[&RafxCommandBuffer],
         wait_semaphores: &[&RafxSemaphore],
     ) -> RafxResult<RafxPresentSuccessResult> {
+        self.present_with_submit_status(queue, command_buffers, wait_semaphores)
+            .0
+    }
+
+    /// Like [`Self::present`], but also reports whether queue submission
+    /// succeeded before a later presentation error. Callers that own resources
+    /// consumed by the submit can use this to commit or roll back accurately.
+    pub fn present_with_submit_status(
+        mut self,
+        queue: &RafxQueue,
+        command_buffers: &[&RafxCommandBuffer],
+        wait_semaphores: &[&RafxSemaphore],
+    ) -> (RafxResult<RafxPresentSuccessResult>, bool) {
         log::trace!(
             "Calling RafxPresentableFrame::present with {} command buffers",
             command_buffers.len()
         );
-        let result = self.do_present(queue, command_buffers, wait_semaphores);
+        let (result, submitted) =
+            self.do_present_with_submit_status(queue, command_buffers, wait_semaphores);
 
         // Let the shared state arc drop, this will unblock the next frame
         let shared_state = self.shared_state.take().unwrap();
         shared_state.result_tx.send(result.clone()).unwrap();
 
-        result
+        (result, submitted)
     }
 
     /// Like present(), but also waits/signals timeline semaphores alongside the binary ones.
     pub fn present_with_timeline(
-        mut self,
+        self,
         queue: &RafxQueue,
         command_buffers: &[&RafxCommandBuffer],
         wait_semaphores: &[&RafxSemaphore],
         wait_timeline: &[(&RafxTimelineSemaphore, u64)],
         signal_timeline: &[(&RafxTimelineSemaphore, u64)],
     ) -> RafxResult<RafxPresentSuccessResult> {
-        let result = self.do_present_with_timeline(
+        self.present_with_timeline_submit_status(
+            queue,
+            command_buffers,
+            wait_semaphores,
+            wait_timeline,
+            signal_timeline,
+        )
+        .0
+    }
+
+    /// Timeline-semaphore form of [`Self::present_with_submit_status`].
+    pub fn present_with_timeline_submit_status(
+        mut self,
+        queue: &RafxQueue,
+        command_buffers: &[&RafxCommandBuffer],
+        wait_semaphores: &[&RafxSemaphore],
+        wait_timeline: &[(&RafxTimelineSemaphore, u64)],
+        signal_timeline: &[(&RafxTimelineSemaphore, u64)],
+    ) -> (RafxResult<RafxPresentSuccessResult>, bool) {
+        let (result, submitted) = self.do_present_with_timeline_submit_status(
             queue,
             command_buffers,
             wait_semaphores,
@@ -159,17 +192,17 @@ impl RafxPresentableFrame {
         );
         let shared_state = self.shared_state.take().unwrap();
         shared_state.result_tx.send(result.clone()).unwrap();
-        result
+        (result, submitted)
     }
 
-    fn do_present_with_timeline(
+    fn do_present_with_timeline_submit_status(
         &mut self,
         queue: &RafxQueue,
         command_buffers: &[&RafxCommandBuffer],
         wait_semaphores: &[&RafxSemaphore],
         wait_timeline: &[(&RafxTimelineSemaphore, u64)],
         signal_timeline: &[(&RafxTimelineSemaphore, u64)],
-    ) -> RafxResult<RafxPresentSuccessResult> {
+    ) -> (RafxResult<RafxPresentSuccessResult>, bool) {
         let shared_state = self.shared_state.as_ref().unwrap();
         let sync_frame_index = shared_state.sync_frame_index.load(Ordering::Relaxed);
         assert!(self.sync_frame_index == sync_frame_index);
@@ -181,14 +214,16 @@ impl RafxPresentableFrame {
         let image_index = self.swapchain_image.swapchain_image_index as usize;
         let signal_semaphores = [&shared_state.render_finished_semaphores[image_index]];
 
-        queue.submit_with_timeline(
+        if let Err(error) = queue.submit_with_timeline(
             command_buffers,
             &submit_wait_semaphores,
             &signal_semaphores,
             wait_timeline,
             signal_timeline,
             Some(frame_fence),
-        )?;
+        ) {
+            return (Err(error), false);
+        }
 
         let swapchain = shared_state.swapchain.lock().unwrap();
         let result = queue.present(
@@ -205,7 +240,7 @@ impl RafxPresentableFrame {
             .global_frame_index
             .fetch_add(1, Ordering::Relaxed);
 
-        result
+        (result, true)
     }
 
     /// Presents the current swapchain image and returns the given error during the next image
@@ -240,6 +275,16 @@ impl RafxPresentableFrame {
         command_buffers: &[&RafxCommandBuffer],
         wait_semaphores: &[&RafxSemaphore],
     ) -> RafxResult<RafxPresentSuccessResult> {
+        self.do_present_with_submit_status(queue, command_buffers, wait_semaphores)
+            .0
+    }
+
+    fn do_present_with_submit_status(
+        &mut self,
+        queue: &RafxQueue,
+        command_buffers: &[&RafxCommandBuffer],
+        wait_semaphores: &[&RafxSemaphore],
+    ) -> (RafxResult<RafxPresentSuccessResult>, bool) {
         // A present can only occur using the result from the previous acquire_next_image call
         let shared_state = self.shared_state.as_ref().unwrap();
         let sync_frame_index = shared_state.sync_frame_index.load(Ordering::Relaxed);
@@ -256,12 +301,14 @@ impl RafxPresentableFrame {
         let image_index = self.swapchain_image.swapchain_image_index as usize;
         let signal_semaphores = [&shared_state.render_finished_semaphores[image_index]];
 
-        queue.submit(
+        if let Err(error) = queue.submit(
             command_buffers,
             &submit_wait_semaphores,
             &signal_semaphores,
             Some(frame_fence),
-        )?;
+        ) {
+            return (Err(error), false);
+        }
 
         let swapchain = shared_state.swapchain.lock().unwrap();
 
@@ -280,7 +327,7 @@ impl RafxPresentableFrame {
             .global_frame_index
             .fetch_add(1, Ordering::Relaxed);
 
-        result
+        (result, true)
     }
 }
 
