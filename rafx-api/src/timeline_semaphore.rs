@@ -1,7 +1,5 @@
 #[cfg(feature = "rafx-dx12")]
 use crate::dx12::RafxTimelineSemaphoreDx12;
-#[cfg(feature = "rafx-metal")]
-use crate::metal::RafxTimelineSemaphoreMetal;
 #[cfg(any(
     feature = "rafx-empty",
     not(any(
@@ -13,6 +11,8 @@ use crate::metal::RafxTimelineSemaphoreMetal;
     ))
 ))]
 use crate::empty::RafxTimelineSemaphoreEmpty;
+#[cfg(feature = "rafx-metal")]
+use crate::metal::RafxTimelineSemaphoreMetal;
 #[cfg(feature = "rafx-vulkan")]
 use crate::vulkan::RafxTimelineSemaphoreVulkan;
 
@@ -140,7 +140,11 @@ impl RafxTimelineSemaphore {
     }
 
     /// CPU-side wait until the semaphore reaches at least `value`.
-    pub fn wait(&self, value: u64, timeout_ns: u64) -> RafxResult<()> {
+    pub fn wait(
+        &self,
+        value: u64,
+        timeout_ns: u64,
+    ) -> RafxResult<()> {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxTimelineSemaphore::Dx12(inner) => inner.wait(value, timeout_ns),
@@ -163,7 +167,10 @@ impl RafxTimelineSemaphore {
     }
 
     /// CPU-side signal: set the semaphore to `value`.
-    pub fn signal(&self, value: u64) -> RafxResult<()> {
+    pub fn signal(
+        &self,
+        value: u64,
+    ) -> RafxResult<()> {
         match self {
             #[cfg(feature = "rafx-dx12")]
             RafxTimelineSemaphore::Dx12(inner) => inner.signal(value),

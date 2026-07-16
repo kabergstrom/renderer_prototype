@@ -25,9 +25,8 @@ impl RafxTimelineSemaphoreDx12 {
                 .d3d12_device()
                 .CreateFence(initial_value, d3d12::D3D12_FENCE_FLAGS::default())?
         };
-        let wait_event = unsafe {
-            windows::Win32::System::Threading::CreateEventW(None, false, false, None)?
-        };
+        let wait_event =
+            unsafe { windows::Win32::System::Threading::CreateEventW(None, false, false, None)? };
         Ok(Self {
             _device_context: device_context.clone(),
             fence,
@@ -45,9 +44,8 @@ impl RafxTimelineSemaphoreDx12 {
                 .d3d12_device()
                 .CreateFence(initial_value, d3d12::D3D12_FENCE_FLAG_SHARED)?
         };
-        let wait_event = unsafe {
-            windows::Win32::System::Threading::CreateEventW(None, false, false, None)?
-        };
+        let wait_event =
+            unsafe { windows::Win32::System::Threading::CreateEventW(None, false, false, None)? };
         Ok(Self {
             _device_context: device_context.clone(),
             fence,
@@ -60,9 +58,8 @@ impl RafxTimelineSemaphoreDx12 {
         device_context: &RafxDeviceContextDx12,
         fence: d3d12::ID3D12Fence1,
     ) -> RafxResult<Self> {
-        let wait_event = unsafe {
-            windows::Win32::System::Threading::CreateEventW(None, false, false, None)?
-        };
+        let wait_event =
+            unsafe { windows::Win32::System::Threading::CreateEventW(None, false, false, None)? };
         Ok(Self {
             _device_context: device_context.clone(),
             fence,
@@ -90,8 +87,7 @@ impl RafxTimelineSemaphoreDx12 {
         }
         unsafe {
             windows::Win32::System::Threading::ResetEvent(self.wait_event);
-            self.fence
-                .SetEventOnCompletion(value, self.wait_event)?;
+            self.fence.SetEventOnCompletion(value, self.wait_event)?;
             let timeout_ms = if timeout_ns == u64::MAX {
                 u32::MAX // INFINITE
             } else {

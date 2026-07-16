@@ -531,20 +531,16 @@ impl RafxQueue {
                     .collect();
                 let wait_timeline: Vec<_> = _wait_timeline
                     .iter()
-                    .map(|(s, v)| {
-                        crate::vulkan::TimelineSemaphoreSubmit {
-                            semaphore: s.vk_timeline_semaphore().unwrap(),
-                            value: *v,
-                        }
+                    .map(|(s, v)| crate::vulkan::TimelineSemaphoreSubmit {
+                        semaphore: s.vk_timeline_semaphore().unwrap(),
+                        value: *v,
                     })
                     .collect();
                 let signal_timeline: Vec<_> = _signal_timeline
                     .iter()
-                    .map(|(s, v)| {
-                        crate::vulkan::TimelineSemaphoreSubmit {
-                            semaphore: s.vk_timeline_semaphore().unwrap(),
-                            value: *v,
-                        }
+                    .map(|(s, v)| crate::vulkan::TimelineSemaphoreSubmit {
+                        semaphore: s.vk_timeline_semaphore().unwrap(),
+                        value: *v,
                     })
                     .collect();
                 inner.submit_with_timeline(

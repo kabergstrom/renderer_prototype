@@ -3,9 +3,8 @@ use crate::{
     RafxDeviceContext, RafxDeviceInfo, RafxDrawIndexedIndirectCommand, RafxDrawIndirectCommand,
     RafxError, RafxExternalSemaphoreHandle, RafxExternalTextureHandle, RafxFormat,
     RafxGraphicsPipelineDef, RafxQueryPoolDef, RafxQueueType, RafxResourceType, RafxResult,
-    RafxRootSignatureDef,
-    RafxSampleCount, RafxSamplerDef, RafxShaderModuleDefDx12, RafxShaderStageDef, RafxSwapchainDef,
-    RafxTextureDef, RafxValidationMode,
+    RafxRootSignatureDef, RafxSampleCount, RafxSamplerDef, RafxShaderModuleDefDx12,
+    RafxShaderStageDef, RafxSwapchainDef, RafxTextureDef, RafxValidationMode,
 };
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::mem::ManuallyDrop;
@@ -13,9 +12,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::dx12::{
     RafxBufferDx12, RafxDescriptorSetArrayDx12, RafxDx12FeatureLevel, RafxFenceDx12,
-    RafxPipelineDx12, RafxQueryPoolDx12, RafxQueueDx12, RafxRawImageDx12, RafxRootSignatureDx12, RafxSamplerDx12,
-    RafxSemaphoreDx12, RafxShaderDx12, RafxShaderModuleDx12, RafxSwapchainDx12, RafxTextureDx12,
-    RafxTimelineSemaphoreDx12,
+    RafxPipelineDx12, RafxQueryPoolDx12, RafxQueueDx12, RafxRawImageDx12, RafxRootSignatureDx12,
+    RafxSamplerDx12, RafxSemaphoreDx12, RafxShaderDx12, RafxShaderModuleDx12, RafxSwapchainDx12,
+    RafxTextureDx12, RafxTimelineSemaphoreDx12,
 };
 
 use super::d3d;
@@ -478,10 +477,7 @@ impl RafxDeviceContextDx12 {
             }
             for i in 0..count {
                 let mut msg_len: usize = 0;
-                if info_queue
-                    .GetMessage(i, None, &mut msg_len)
-                    .is_err()
-                {
+                if info_queue.GetMessage(i, None, &mut msg_len).is_err() {
                     continue;
                 }
                 let mut buf = vec![0u8; msg_len];

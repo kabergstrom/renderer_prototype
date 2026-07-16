@@ -48,7 +48,7 @@ fn field_name_to_channel_bit(name: &str) -> Result<Option<u32>, String> {
         "normal" => Ok(Some(1 << 1)),           // NORMAL
         "tangent" => Ok(Some(1 << 2)),          // TANGENT
         "uv" | "uv0" | "texcoord" | "texcoord0" => Ok(Some(1 << 3)), // UV0
-        "uv2" | "uv1" | "texcoord1" => Ok(Some(1 << 4)),             // UV1
+        "uv2" | "uv1" | "texcoord1" => Ok(Some(1 << 4)), // UV1
         "color" | "colour" => Ok(Some(1 << 5)), // COLOR
         _ if name.starts_with("_padding") => Ok(None),
         _ => Err(format!(
@@ -120,7 +120,7 @@ fn compute_vertex_channels(compile_results: &[CompileResult]) -> Result<Option<u
 
 /// Public entry point for lib.rs when rust codegen is disabled.
 pub(crate) fn compute_vertex_channels_from_results(
-    compile_results: &[CompileResult],
+    compile_results: &[CompileResult]
 ) -> Option<u32> {
     match compute_vertex_channels(compile_results) {
         Ok(channels) => channels,
@@ -677,8 +677,7 @@ fn create_binding_wrapper_binding_item(
 
     use heck::SnakeCase;
     let binding_name = binding.parsed.instance_name.to_snake_case();
-    let binding_index_string =
-        format!("{}.binding", descriptor_constant_name(binding));
+    let binding_index_string = format!("{}.binding", descriptor_constant_name(binding));
 
     if e.immutable_samplers.is_none()
         && e.resource.resource_type == RafxResourceType::COMBINED_IMAGE_SAMPLER

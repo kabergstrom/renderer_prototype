@@ -743,9 +743,15 @@ impl RafxSwapchainVulkanInstance {
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(surface_capabilities.current_transform)
             .composite_alpha(
-                if surface_capabilities.supported_composite_alpha.contains(vk::CompositeAlphaFlagsKHR::OPAQUE) {
+                if surface_capabilities
+                    .supported_composite_alpha
+                    .contains(vk::CompositeAlphaFlagsKHR::OPAQUE)
+                {
                     vk::CompositeAlphaFlagsKHR::OPAQUE
-                } else if surface_capabilities.supported_composite_alpha.contains(vk::CompositeAlphaFlagsKHR::INHERIT) {
+                } else if surface_capabilities
+                    .supported_composite_alpha
+                    .contains(vk::CompositeAlphaFlagsKHR::INHERIT)
+                {
                     vk::CompositeAlphaFlagsKHR::INHERIT
                 } else {
                     vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED

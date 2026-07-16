@@ -150,8 +150,13 @@ impl RafxPresentableFrame {
         wait_timeline: &[(&RafxTimelineSemaphore, u64)],
         signal_timeline: &[(&RafxTimelineSemaphore, u64)],
     ) -> RafxResult<RafxPresentSuccessResult> {
-        let result =
-            self.do_present_with_timeline(queue, command_buffers, wait_semaphores, wait_timeline, signal_timeline);
+        let result = self.do_present_with_timeline(
+            queue,
+            command_buffers,
+            wait_semaphores,
+            wait_timeline,
+            signal_timeline,
+        );
         let shared_state = self.shared_state.take().unwrap();
         shared_state.result_tx.send(result.clone()).unwrap();
         result

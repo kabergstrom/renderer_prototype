@@ -596,7 +596,9 @@ impl RafxDeviceContextVulkan {
 
         #[cfg(target_os = "macos")]
         let (image, device_memory) = {
-            eprintln!("  create_exportable_texture: macOS path — chaining ExportMetalObjectCreateInfoEXT");
+            eprintln!(
+                "  create_exportable_texture: macOS path — chaining ExportMetalObjectCreateInfoEXT"
+            );
             // Chain ExportMetalObjectCreateInfoEXT to request IOSurface-backed image
             let mut metal_export_info = vk::ExportMetalObjectCreateInfoEXT::builder()
                 .export_object_type(vk::ExportMetalObjectTypeFlagsEXT::METAL_IOSURFACE)
@@ -621,14 +623,20 @@ impl RafxDeviceContextVulkan {
             eprintln!("  create_exportable_texture: vkCreateImage OK");
 
             let mem_reqs = unsafe { device.get_image_memory_requirements(image) };
-            eprintln!("  create_exportable_texture: mem_reqs size={}, type_bits={:#x}", mem_reqs.size, mem_reqs.memory_type_bits);
+            eprintln!(
+                "  create_exportable_texture: mem_reqs size={}, type_bits={:#x}",
+                mem_reqs.size, mem_reqs.memory_type_bits
+            );
 
             let mem_type_index = find_memory_type(
                 self,
                 mem_reqs.memory_type_bits,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
             )?;
-            eprintln!("  create_exportable_texture: mem_type_index={}", mem_type_index);
+            eprintln!(
+                "  create_exportable_texture: mem_type_index={}",
+                mem_type_index
+            );
 
             let mut dedicated_info = vk::MemoryDedicatedAllocateInfo::builder()
                 .image(image)
@@ -727,7 +735,10 @@ impl RafxDeviceContextVulkan {
                 .build();
 
             unsafe {
-                (metal_objects_fn.export_metal_objects_ext)(self.device().handle(), &mut export_info)
+                (metal_objects_fn.export_metal_objects_ext)(
+                    self.device().handle(),
+                    &mut export_info,
+                )
             };
 
             if iosurface_info.io_surface.is_null() {
@@ -943,8 +954,7 @@ impl RafxDeviceContextVulkan {
                 .push_next(&mut export_info)
                 .build();
 
-            let vk_semaphore =
-                unsafe { self.device().create_semaphore(&create_info, None)? };
+            let vk_semaphore = unsafe { self.device().create_semaphore(&create_info, None)? };
 
             Ok(unsafe {
                 crate::vulkan::RafxTimelineSemaphoreVulkan::from_existing(self, vk_semaphore)
@@ -974,8 +984,7 @@ impl RafxDeviceContextVulkan {
                 .push_next(&mut import_event)
                 .build();
 
-            let vk_semaphore =
-                unsafe { self.device().create_semaphore(&create_info, None)? };
+            let vk_semaphore = unsafe { self.device().create_semaphore(&create_info, None)? };
 
             let mut sem = unsafe {
                 crate::vulkan::RafxTimelineSemaphoreVulkan::from_existing(self, vk_semaphore)
@@ -1043,8 +1052,7 @@ impl RafxDeviceContextVulkan {
             let create_info = vk::SemaphoreCreateInfo::builder()
                 .push_next(&mut type_info)
                 .build();
-            let vk_semaphore =
-                unsafe { self.device().create_semaphore(&create_info, None)? };
+            let vk_semaphore = unsafe { self.device().create_semaphore(&create_info, None)? };
 
             let fd_loader =
                 ash::extensions::khr::ExternalSemaphoreFd::new(self.instance(), self.device());
@@ -1081,8 +1089,7 @@ impl RafxDeviceContextVulkan {
                 .push_next(&mut import_event)
                 .build();
 
-            let vk_semaphore =
-                unsafe { self.device().create_semaphore(&create_info, None)? };
+            let vk_semaphore = unsafe { self.device().create_semaphore(&create_info, None)? };
 
             Ok(unsafe {
                 crate::vulkan::RafxTimelineSemaphoreVulkan::from_existing(self, vk_semaphore)
@@ -1483,8 +1490,7 @@ fn create_mtl_shared_event() -> RafxResult<vk::MTLSharedEvent_id> {
             ));
         }
 
-        let send_obj: MsgSendObj =
-            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let send_obj: MsgSendObj = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         let sel = sel_registerName(b"newSharedEvent\0".as_ptr());
         let event = send_obj(device, sel);
         if event.is_null() {
@@ -1504,9 +1510,7 @@ fn create_mtl_shared_event() -> RafxResult<vk::MTLSharedEvent_id> {
 // IMPORTANT: On ARM64, objc_msgSend uses the standard (non-variadic) calling convention.
 // We must use typed function pointers so arguments are passed in registers.
 #[cfg(target_os = "macos")]
-fn get_shared_event_mach_port(
-    mtl_shared_event: vk::MTLSharedEvent_id,
-) -> RafxResult<u32> {
+fn get_shared_event_mach_port(mtl_shared_event: vk::MTLSharedEvent_id) -> RafxResult<u32> {
     use std::ffi::c_void;
 
     #[link(name = "objc", kind = "dylib")]
@@ -1519,10 +1523,8 @@ fn get_shared_event_mach_port(
     type MsgSendU32 = unsafe extern "C" fn(*mut c_void, *mut c_void) -> u32;
 
     unsafe {
-        let send_obj: MsgSendObj =
-            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-        let send_u32: MsgSendU32 =
-            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let send_obj: MsgSendObj = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let send_u32: MsgSendU32 = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
 
         // [event newSharedEventHandle] → MTLSharedEventHandle*
         let sel_new_handle = sel_registerName(b"newSharedEventHandle\0".as_ptr());
@@ -1552,9 +1554,7 @@ fn get_shared_event_mach_port(
 }
 
 #[cfg(target_os = "macos")]
-fn create_shared_event_from_mach_port(
-    mach_port: u32,
-) -> RafxResult<vk::MTLSharedEvent_id> {
+fn create_shared_event_from_mach_port(mach_port: u32) -> RafxResult<vk::MTLSharedEvent_id> {
     use std::ffi::c_void;
 
     #[link(name = "objc", kind = "dylib")]
@@ -1579,8 +1579,7 @@ fn create_shared_event_from_mach_port(
             ));
         }
 
-        let send_port: MsgSendPort =
-            std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        let send_port: MsgSendPort = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         let sel = sel_registerName(b"newSharedEventWithMachPort:\0".as_ptr());
         let event = send_port(device, sel, mach_port);
         if event.is_null() {

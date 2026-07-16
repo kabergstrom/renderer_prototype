@@ -5,11 +5,12 @@ use crate::dx12::{
 };
 use crate::{
     RafxBarrierQueueTransition, RafxBufferBarrier, RafxCmdCopyBufferToBufferParams,
-    RafxCmdCopyBufferToTextureParams, RafxCmdCopyTextureToBufferParams, RafxCmdCopyTextureToTextureParams,
-    RafxColorRenderTargetBinding, RafxCommandBufferDef, RafxDepthStencilRenderTargetBinding,
-    RafxDescriptorIndex, RafxExtents3D, RafxIndexBufferBinding, RafxIndexType, RafxLoadOp,
-    RafxMemoryUsage, RafxPipelineType, RafxQueueType, RafxResourceState, RafxResourceType,
-    RafxResult, RafxTextureBarrier, RafxVertexBufferBinding,
+    RafxCmdCopyBufferToTextureParams, RafxCmdCopyTextureToBufferParams,
+    RafxCmdCopyTextureToTextureParams, RafxColorRenderTargetBinding, RafxCommandBufferDef,
+    RafxDepthStencilRenderTargetBinding, RafxDescriptorIndex, RafxExtents3D,
+    RafxIndexBufferBinding, RafxIndexType, RafxLoadOp, RafxMemoryUsage, RafxPipelineType,
+    RafxQueueType, RafxResourceState, RafxResourceType, RafxResult, RafxTextureBarrier,
+    RafxVertexBufferBinding,
 };
 use rafx_base::trust_cell::TrustCell;
 use std::mem::ManuallyDrop;
@@ -1111,7 +1112,9 @@ impl RafxCommandBufferDx12 {
 
         let dst_x = params.copy_offset.width;
         let dst_y = params.copy_offset.height;
-        let has_extents = params.buffer_extents.width > 0 || params.buffer_extents.height > 0 || params.buffer_extents.depth > 0;
+        let has_extents = params.buffer_extents.width > 0
+            || params.buffer_extents.height > 0
+            || params.buffer_extents.depth > 0;
         let mut src_box = d3d12::D3D12_BOX::default();
         src_box.right = params.buffer_extents.width;
         src_box.bottom = params.buffer_extents.height;
@@ -1190,13 +1193,19 @@ impl RafxCommandBufferDx12 {
         dst.pResource = ::windows::core::ManuallyDrop::new(dst_buffer.dx12_resource());
         dst.Anonymous.PlacedFootprint = placed_footprint;
 
-        let has_extents = params.buffer_extents.width > 0 || params.buffer_extents.height > 0 || params.buffer_extents.depth > 0;
+        let has_extents = params.buffer_extents.width > 0
+            || params.buffer_extents.height > 0
+            || params.buffer_extents.depth > 0;
         let mut src_box = d3d12::D3D12_BOX::default();
         src_box.left = params.copy_offset.width;
         src_box.top = params.copy_offset.height;
         src_box.right = params.copy_offset.width + params.buffer_extents.width;
         src_box.bottom = params.copy_offset.height + params.buffer_extents.height;
-        src_box.back = if params.buffer_extents.depth > 0 { params.buffer_extents.depth } else { 1 };
+        src_box.back = if params.buffer_extents.depth > 0 {
+            params.buffer_extents.depth
+        } else {
+            1
+        };
         let src_box: Option<*const d3d12::D3D12_BOX> = if has_extents {
             Some(std::ptr::addr_of!(src_box))
         } else {

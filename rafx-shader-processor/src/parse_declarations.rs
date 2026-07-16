@@ -123,7 +123,8 @@ impl BindingAnnotations {
                     parsed_annotations.semantic = Some(parse_ron_or_default(&annotation_data)?);
                 }
                 "vertex_formats" => {
-                    parsed_annotations.vertex_formats = Some(parse_ron_or_default(&annotation_data)?);
+                    parsed_annotations.vertex_formats =
+                        Some(parse_ron_or_default(&annotation_data)?);
                 }
                 _ => {
                     return Err(format!(

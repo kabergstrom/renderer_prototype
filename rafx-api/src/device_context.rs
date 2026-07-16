@@ -495,8 +495,9 @@ impl RafxDeviceContext {
             RafxDeviceContext::Dx12(inner) => inner
                 .export_timeline_semaphore_handle(_semaphore.dx12_timeline_semaphore().unwrap()),
             #[cfg(feature = "rafx-vulkan")]
-            RafxDeviceContext::Vk(inner) => inner
-                .export_timeline_semaphore_handle(_semaphore.vk_timeline_semaphore().unwrap()),
+            RafxDeviceContext::Vk(inner) => {
+                inner.export_timeline_semaphore_handle(_semaphore.vk_timeline_semaphore().unwrap())
+            }
             #[allow(unreachable_patterns)]
             _ => Err(crate::RafxError::StringError(
                 "Timeline semaphore export is not supported on this backend".to_string(),

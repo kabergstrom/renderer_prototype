@@ -29,10 +29,17 @@ pub struct RafxPipelinePackage {
 
 impl RafxPipelinePackage {
     pub fn new(shaders: Vec<RafxHashedShaderPackage>) -> Self {
-        Self { shaders, vertex_channels: None, variants: Vec::new() }
+        Self {
+            shaders,
+            vertex_channels: None,
+            variants: Vec::new(),
+        }
     }
 
-    pub fn with_vertex_channels(mut self, channels: Option<u32>) -> Self {
+    pub fn with_vertex_channels(
+        mut self,
+        channels: Option<u32>,
+    ) -> Self {
         self.vertex_channels = channels;
         self
     }

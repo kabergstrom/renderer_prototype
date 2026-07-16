@@ -160,7 +160,8 @@ impl RafxRootSignatureDx12 {
                         if found_descriptor != s_descriptor_index {
                             log::warn!(
                                 "Stages don't agree {:?} {:?}",
-                                found_descriptor, s_descriptor_index
+                                found_descriptor,
+                                s_descriptor_index
                             );
                             // The caller passed multiple stages and they do not use the same push constant descriptor
                             return None;
@@ -309,10 +310,12 @@ impl RafxRootSignatureDx12 {
             // This may check being a uniform buffer and element count = 1
             let treat_as_root_constant = resource.resource_type == RafxResourceType::ROOT_CONSTANT;
             // Dynamic buffer bindings become root descriptors (Root CBV / Root SRV)
-            let treat_as_root_descriptor = root_signature_def.dynamic_buffer_bindings.iter().any(|k| {
-                k.set == resource.set_index && k.binding == resource.binding
-            }) && (resource.resource_type == RafxResourceType::UNIFORM_BUFFER
-                || resource.resource_type == RafxResourceType::BUFFER)
+            let treat_as_root_descriptor = root_signature_def
+                .dynamic_buffer_bindings
+                .iter()
+                .any(|k| k.set == resource.set_index && k.binding == resource.binding)
+                && (resource.resource_type == RafxResourceType::UNIFORM_BUFFER
+                    || resource.resource_type == RafxResourceType::BUFFER)
                 && resource.element_count_normalized() == 1;
 
             if !treat_as_root_constant {
@@ -465,11 +468,10 @@ impl RafxRootSignatureDx12 {
             let mut descriptor_indices = descriptor_indices.to_vec();
             descriptor_indices.sort_by_key(|di| {
                 let d = &descriptors[di.0 as usize];
-                let range_type =
-                    super::internal::conversions::resource_type_descriptor_range_type(
-                        d.resource_type,
-                    )
-                    .unwrap();
+                let range_type = super::internal::conversions::resource_type_descriptor_range_type(
+                    d.resource_type,
+                )
+                .unwrap();
                 (range_type.0, d.register)
             });
             let descriptor_indices = &descriptor_indices[..];

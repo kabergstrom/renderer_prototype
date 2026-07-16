@@ -232,9 +232,10 @@ impl RafxRootSignatureVulkan {
                     .stage_flags(vk_stage_flags);
 
                 // Check if this binding is flagged as dynamic via root_signature_def
-                let is_dynamic = root_signature_def.dynamic_buffer_bindings.iter().any(|k| {
-                    k.set == resource.set_index && k.binding == resource.binding
-                });
+                let is_dynamic = root_signature_def
+                    .dynamic_buffer_bindings
+                    .iter()
+                    .any(|k| k.set == resource.set_index && k.binding == resource.binding);
                 if is_dynamic {
                     if resource.element_count_normalized() != 1 {
                         Err(format!(
@@ -244,10 +245,12 @@ impl RafxRootSignatureVulkan {
                     }
                     match vk_descriptor_type {
                         vk::DescriptorType::UNIFORM_BUFFER => {
-                            binding = binding.descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC);
+                            binding =
+                                binding.descriptor_type(vk::DescriptorType::UNIFORM_BUFFER_DYNAMIC);
                         }
                         vk::DescriptorType::STORAGE_BUFFER => {
-                            binding = binding.descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC);
+                            binding =
+                                binding.descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC);
                         }
                         _ => {
                             Err(format!(

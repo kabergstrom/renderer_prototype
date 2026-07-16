@@ -85,7 +85,11 @@ impl RafxTimelineSemaphoreVulkan {
     }
 
     /// CPU-side wait until the semaphore reaches at least `value`.
-    pub fn wait(&self, value: u64, timeout_ns: u64) -> RafxResult<()> {
+    pub fn wait(
+        &self,
+        value: u64,
+        timeout_ns: u64,
+    ) -> RafxResult<()> {
         let semaphores = [self.vk_semaphore];
         let values = [value];
         let wait_info = vk::SemaphoreWaitInfo::builder()
@@ -100,7 +104,10 @@ impl RafxTimelineSemaphoreVulkan {
     }
 
     /// CPU-side signal: set the semaphore to `value`.
-    pub fn signal(&self, value: u64) -> RafxResult<()> {
+    pub fn signal(
+        &self,
+        value: u64,
+    ) -> RafxResult<()> {
         let signal_info = vk::SemaphoreSignalInfo::builder()
             .semaphore(self.vk_semaphore)
             .value(value);

@@ -5,11 +5,11 @@ use crate::metal::{
 };
 use crate::{
     RafxBufferBarrier, RafxCmdCopyBufferToBufferParams, RafxCmdCopyBufferToTextureParams,
-    RafxCmdCopyTextureToBufferParams, RafxCmdCopyTextureToTextureParams, RafxColorRenderTargetBinding, RafxCommandBufferDef,
-    RafxDepthStencilRenderTargetBinding, RafxDescriptorIndex, RafxDrawIndexedIndirectCommand,
-    RafxDrawIndirectCommand, RafxExtents3D, RafxIndexBufferBinding, RafxIndexType, RafxLoadOp,
-    RafxPipelineType, RafxResourceState, RafxResult, RafxShaderStageFlags, RafxTextureBarrier,
-    RafxVertexBufferBinding,
+    RafxCmdCopyTextureToBufferParams, RafxCmdCopyTextureToTextureParams,
+    RafxColorRenderTargetBinding, RafxCommandBufferDef, RafxDepthStencilRenderTargetBinding,
+    RafxDescriptorIndex, RafxDrawIndexedIndirectCommand, RafxDrawIndirectCommand, RafxExtents3D,
+    RafxIndexBufferBinding, RafxIndexType, RafxLoadOp, RafxPipelineType, RafxResourceState,
+    RafxResult, RafxShaderStageFlags, RafxTextureBarrier, RafxVertexBufferBinding,
 };
 use fnv::FnvHashSet;
 use metal_rs::foreign_types::{ForeignType, ForeignTypeRef};

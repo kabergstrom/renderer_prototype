@@ -269,10 +269,15 @@ impl RafxDescriptorSetArrayDx12 {
             let count = stride * descriptor_set_array_def.array_length as u32;
             log::debug!("descriptor_set_array: allocating {} cbv_srv_uav descriptors (stride={}, array_len={}) for set_index={}",
                 count, stride, descriptor_set_array_def.array_length, layout_index);
-            let first_id = device_context.inner.heaps.gpu_cbv_srv_uav_heap.allocate(
-                device_context.d3d12_device(),
-                count,
-            ).map_err(|e| { log::error!("cbv_srv_uav heap allocate failed: {e:?}"); e })?;
+            let first_id = device_context
+                .inner
+                .heaps
+                .gpu_cbv_srv_uav_heap
+                .allocate(device_context.d3d12_device(), count)
+                .map_err(|e| {
+                    log::error!("cbv_srv_uav heap allocate failed: {e:?}");
+                    e
+                })?;
             Some(RafxDescriptorSetTableInfo {
                 first_id,
                 stride,
@@ -287,10 +292,15 @@ impl RafxDescriptorSetArrayDx12 {
             let count = stride * descriptor_set_array_def.array_length as u32;
             log::debug!("descriptor_set_array: allocating {} sampler descriptors (stride={}, array_len={}) for set_index={}",
                 count, stride, descriptor_set_array_def.array_length, layout_index);
-            let first_id = device_context.inner.heaps.gpu_sampler_heap.allocate(
-                device_context.d3d12_device(),
-                count,
-            ).map_err(|e| { log::error!("sampler heap allocate failed: {e:?}"); e })?;
+            let first_id = device_context
+                .inner
+                .heaps
+                .gpu_sampler_heap
+                .allocate(device_context.d3d12_device(), count)
+                .map_err(|e| {
+                    log::error!("sampler heap allocate failed: {e:?}");
+                    e
+                })?;
             Some(RafxDescriptorSetTableInfo {
                 first_id,
                 stride,
@@ -400,7 +410,9 @@ impl RafxDescriptorSetArrayDx12 {
                     gpu_va += offset_sizes[0].byte_offset;
                 }
                 // Find the matching root descriptor entry and update its GPU VA
-                for rd in &mut self.root_descriptors[update.array_index as usize][..self.root_descriptor_count as usize] {
+                for rd in &mut self.root_descriptors[update.array_index as usize]
+                    [..self.root_descriptor_count as usize]
+                {
                     if rd.root_param_index == descriptor.root_param_index.unwrap() as u8 {
                         rd.gpu_va = gpu_va;
                         break;
@@ -868,7 +880,8 @@ impl RafxDescriptorSetArrayDx12 {
                         let mut desc = super::d3d12::D3D12_SHADER_RESOURCE_VIEW_DESC::default();
                         desc.Format = buffer_def.format.into();
                         desc.ViewDimension = super::d3d12::D3D12_SRV_DIMENSION_BUFFER;
-                        desc.Shader4ComponentMapping = super::d3d12::D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+                        desc.Shader4ComponentMapping =
+                            super::d3d12::D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
                         let element_stride = if buffer_def.elements.element_stride > 0 {
                             buffer_def.elements.element_stride as u64
@@ -881,8 +894,10 @@ impl RafxDescriptorSetArrayDx12 {
                             buffer_def.size - offset_size.byte_offset
                         };
 
-                        desc.Anonymous.Buffer.FirstElement = offset_size.byte_offset / element_stride;
-                        desc.Anonymous.Buffer.NumElements = (effective_size / element_stride) as u32;
+                        desc.Anonymous.Buffer.FirstElement =
+                            offset_size.byte_offset / element_stride;
+                        desc.Anonymous.Buffer.NumElements =
+                            (effective_size / element_stride) as u32;
                         desc.Anonymous.Buffer.StructureByteStride = element_stride as u32;
                         desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_SRV_FLAG_NONE;
 
@@ -972,8 +987,10 @@ impl RafxDescriptorSetArrayDx12 {
                             buffer_def.size - offset_size.byte_offset
                         };
 
-                        desc.Anonymous.Buffer.FirstElement = offset_size.byte_offset / element_stride;
-                        desc.Anonymous.Buffer.NumElements = (effective_size / element_stride) as u32;
+                        desc.Anonymous.Buffer.FirstElement =
+                            offset_size.byte_offset / element_stride;
+                        desc.Anonymous.Buffer.NumElements =
+                            (effective_size / element_stride) as u32;
                         desc.Anonymous.Buffer.StructureByteStride = element_stride as u32;
                         desc.Anonymous.Buffer.CounterOffsetInBytes = 0;
                         desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_UAV_FLAG_NONE;

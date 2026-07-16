@@ -327,8 +327,7 @@ impl RafxDescriptorSetArrayVulkan {
                                 descriptor.resource_type,
                             )
                         })?;
-                        image_info.image_layout =
-                            vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                        image_info.image_layout = vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
                         continue;
                     }
 
@@ -411,8 +410,7 @@ impl RafxDescriptorSetArrayVulkan {
                                 descriptor.resource_type,
                             )
                         })?;
-                        image_info.image_layout =
-                            vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                        image_info.image_layout = vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL;
                         continue;
                     }
 

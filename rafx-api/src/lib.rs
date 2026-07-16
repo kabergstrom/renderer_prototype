@@ -298,11 +298,11 @@ mod queue;
 mod root_signature;
 mod sampler;
 mod semaphore;
-mod timeline_semaphore;
 mod shader;
 mod shader_module;
 mod swapchain;
 mod texture;
+mod timeline_semaphore;
 
 //
 // Constants
@@ -330,6 +330,7 @@ pub use command_pool::*;
 pub use descriptor_set_array::*;
 pub use device_context::*;
 pub use error::*;
+pub use external::*;
 pub use extra::swapchain_helper::*;
 pub use fence::*;
 pub use pipeline::*;
@@ -338,10 +339,9 @@ pub use queue::*;
 pub use root_signature::*;
 pub use sampler::*;
 pub use semaphore::*;
-pub use timeline_semaphore::*;
 pub use shader::*;
 pub use shader_module::*;
 pub use swapchain::*;
 pub use texture::*;
+pub use timeline_semaphore::*;
 pub use types::*;
-pub use external::*;

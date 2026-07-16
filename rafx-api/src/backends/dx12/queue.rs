@@ -179,9 +179,7 @@ impl RafxQueueDx12 {
 
         for wt in wait_timeline {
             unsafe {
-                self.inner
-                    .queue
-                    .Wait(wt.semaphore.dx12_fence(), wt.value)?;
+                self.inner.queue.Wait(wt.semaphore.dx12_fence(), wt.value)?;
             }
         }
 

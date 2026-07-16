@@ -21,11 +21,11 @@ use crate::metal::RafxCommandBufferMetal;
 use crate::vulkan::RafxCommandBufferVulkan;
 use crate::{
     RafxBuffer, RafxBufferBarrier, RafxCmdCopyBufferToBufferParams,
-    RafxCmdCopyBufferToTextureParams, RafxCmdCopyTextureToBufferParams, RafxCmdCopyTextureToTextureParams,
-    RafxColorRenderTargetBinding, RafxDepthStencilRenderTargetBinding, RafxDescriptorIndex,
-    RafxDescriptorSetArray, RafxDescriptorSetHandle, RafxIndexBufferBinding, RafxPipeline,
-    RafxQueryPool, RafxResult, RafxRootSignature, RafxTexture, RafxTextureBarrier,
-    RafxVertexBufferBinding,
+    RafxCmdCopyBufferToTextureParams, RafxCmdCopyTextureToBufferParams,
+    RafxCmdCopyTextureToTextureParams, RafxColorRenderTargetBinding,
+    RafxDepthStencilRenderTargetBinding, RafxDescriptorIndex, RafxDescriptorSetArray,
+    RafxDescriptorSetHandle, RafxIndexBufferBinding, RafxPipeline, RafxQueryPool, RafxResult,
+    RafxRootSignature, RafxTexture, RafxTextureBarrier, RafxVertexBufferBinding,
 };
 
 /// A list of commands recorded by the CPU and submitted to the GPU.

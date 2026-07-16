@@ -20,8 +20,8 @@ use include::include_impl;
 use include::IncludeType;
 use rafx_api::{
     RafxHashedShaderPackage, RafxPipelinePackage, RafxPipelineVariant, RafxShaderPackage,
-    RafxShaderPackageDx12, RafxShaderPackageGles2, RafxShaderPackageGles3,
-    RafxShaderPackageMetal, RafxShaderPackageVulkan,
+    RafxShaderPackageDx12, RafxShaderPackageGles2, RafxShaderPackageGles3, RafxShaderPackageMetal,
+    RafxShaderPackageVulkan,
 };
 use shaderc::{CompilationArtifact, Compiler, ShaderKind};
 use spirv_cross2::reflect::ShaderResources;
@@ -260,7 +260,10 @@ fn process_directory(
             source_codes.push((glsl_file.clone(), code));
         }
         let vertex_formats = pre_scan_vertex_formats(
-            &source_codes.iter().map(|(_, c)| c.clone()).collect::<Vec<_>>(),
+            &source_codes
+                .iter()
+                .map(|(_, c)| c.clone())
+                .collect::<Vec<_>>(),
         );
         let has_vertex_formats = !vertex_formats.is_empty();
 
@@ -294,7 +297,8 @@ fn process_directory(
             };
 
             log::info!("Compiling file {:?}", glsl_file);
-            let mut defines: Vec<(&str, &str)> = vec![(PREPROCESSOR_DEF_PLATFORM_RUST_CODEGEN, "1")];
+            let mut defines: Vec<(&str, &str)> =
+                vec![(PREPROCESSOR_DEF_PLATFORM_RUST_CODEGEN, "1")];
             defines.extend_from_slice(&primary_extra);
             let compile_result = compile_glsl(&compile_parameters, &defines)
                 .map_err(|x| format!("{}: {}", glsl_file.to_string_lossy(), x.to_string()))?;
@@ -332,7 +336,15 @@ fn process_directory(
         // ---- Cross-compile primary format ----
         log::info!("{:?}: cross compile primary", stem);
         let (vk_output, dx12_output, metal_output, gles2_output, gles3_output) =
-            cross_compile_variant(&cross_compile_params_ref, args, &primary_extra, package_dx12, package_metal, package_gles2, package_gles3)?;
+            cross_compile_variant(
+                &cross_compile_params_ref,
+                args,
+                &primary_extra,
+                package_dx12,
+                package_metal,
+                package_gles2,
+                package_gles3,
+            )?;
 
         if let Some(spv_file) = &args.spv_file {
             for shader in &vk_output.shader_results {
@@ -353,9 +365,14 @@ fn process_directory(
 
             let glsl_paths: Vec<&Path> = cross_compile_params_ref.iter().map(|(p, _)| *p).collect();
             let packages = package_shader_stages(
-                &compile_results, &glsl_paths, args,
-                &vk_output, dx12_output.as_ref(), metal_output.as_ref(),
-                gles2_output.as_ref(), gles3_output.as_ref(),
+                &compile_results,
+                &glsl_paths,
+                args,
+                &vk_output,
+                dx12_output.as_ref(),
+                metal_output.as_ref(),
+                gles2_output.as_ref(),
+                gles3_output.as_ref(),
             )?;
 
             // ---- Additional vertex format variants ----
@@ -368,21 +385,35 @@ fn process_directory(
                 // Codegen compile just to get vertex channels for this variant
                 let mut variant_compile_results = Vec::new();
                 for (_, parameters) in &cross_compile_params {
-                    let mut defines: Vec<(&str, &str)> = vec![(PREPROCESSOR_DEF_PLATFORM_RUST_CODEGEN, "1")];
+                    let mut defines: Vec<(&str, &str)> =
+                        vec![(PREPROCESSOR_DEF_PLATFORM_RUST_CODEGEN, "1")];
                     defines.extend_from_slice(&extra);
                     let cr = compile_glsl(parameters, &defines)?;
                     variant_compile_results.push(cr);
                 }
-                let variant_channels = codegen::compute_vertex_channels_from_results(&variant_compile_results);
+                let variant_channels =
+                    codegen::compute_vertex_channels_from_results(&variant_compile_results);
 
                 // Cross-compile this variant
-                let (v_vk, v_dx12, v_metal, v_gles2, v_gles3) =
-                    cross_compile_variant(&cross_compile_params_ref, args, &extra, package_dx12, package_metal, package_gles2, package_gles3)?;
+                let (v_vk, v_dx12, v_metal, v_gles2, v_gles3) = cross_compile_variant(
+                    &cross_compile_params_ref,
+                    args,
+                    &extra,
+                    package_dx12,
+                    package_metal,
+                    package_gles2,
+                    package_gles3,
+                )?;
 
                 let variant_packages = package_shader_stages(
-                    &variant_compile_results, &glsl_paths, args,
-                    &v_vk, v_dx12.as_ref(), v_metal.as_ref(),
-                    v_gles2.as_ref(), v_gles3.as_ref(),
+                    &variant_compile_results,
+                    &glsl_paths,
+                    args,
+                    &v_vk,
+                    v_dx12.as_ref(),
+                    v_metal.as_ref(),
+                    v_gles2.as_ref(),
+                    v_gles3.as_ref(),
                 )?;
 
                 pipeline_variants.push(RafxPipelineVariant {
@@ -474,7 +505,10 @@ fn pre_scan_vertex_formats(sources: &[String]) -> Vec<String> {
             let data_start = start + "@[vertex_formats".len();
             if let Some(end) = source[data_start..].find(")]") {
                 let ron_data = &source[data_start..data_start + end + 1]; // include closing )
-                if let Ok(ann) = ron::de::from_str::<crate::parse_declarations::VertexFormatsAnnotation>(ron_data) {
+                if let Ok(ann) = ron::de::from_str::<
+                    crate::parse_declarations::VertexFormatsAnnotation,
+                >(ron_data)
+                {
                     return ann.0;
                 }
             }
@@ -501,55 +535,95 @@ fn package_shader_stages(
         let mut shader_package = RafxShaderPackage::default();
 
         if args.package_all || args.package_vk {
-            let vk_shader = vk_output.shader_results.iter()
-                .find(|s| &s.glsl_file == glsl_file).unwrap();
+            let vk_shader = vk_output
+                .shader_results
+                .iter()
+                .find(|s| &s.glsl_file == glsl_file)
+                .unwrap();
             shader_package.vk = Some(RafxShaderPackageVulkan::SpvBytes(vk_shader.new_src.clone()));
-            shader_package.vk_reflection = vk_output.reflection_data.reflection.iter()
-                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage).cloned();
+            shader_package.vk_reflection = vk_output
+                .reflection_data
+                .reflection
+                .iter()
+                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage)
+                .cloned();
         }
 
         if let Some(dx12_output) = dx12_output {
-            let dx12_shader = dx12_output.shader_results.iter()
-                .find(|s| &s.glsl_file == glsl_file).unwrap();
+            let dx12_shader = dx12_output
+                .shader_results
+                .iter()
+                .find(|s| &s.glsl_file == glsl_file)
+                .unwrap();
             shader_package.dx12 = Some(RafxShaderPackageDx12::Src(
                 std::str::from_utf8(&dx12_shader.new_src).unwrap().into(),
             ));
-            shader_package.dx12_reflection = dx12_output.reflection_data.reflection.iter()
-                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage).cloned();
+            shader_package.dx12_reflection = dx12_output
+                .reflection_data
+                .reflection
+                .iter()
+                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage)
+                .cloned();
         }
 
         if let Some(metal_output) = metal_output {
-            let metal_shader = metal_output.shader_results.iter()
-                .find(|s| &s.glsl_file == glsl_file).unwrap();
+            let metal_shader = metal_output
+                .shader_results
+                .iter()
+                .find(|s| &s.glsl_file == glsl_file)
+                .unwrap();
             shader_package.metal = Some(RafxShaderPackageMetal::Src(
                 std::str::from_utf8(&metal_shader.new_src).unwrap().into(),
             ));
-            shader_package.metal_reflection = metal_output.reflection_data.reflection.iter()
-                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage).cloned();
+            shader_package.metal_reflection = metal_output
+                .reflection_data
+                .reflection
+                .iter()
+                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage)
+                .cloned();
         }
 
         if let Some(gles2) = gles2_output {
-            let gles2_shader = gles2.shader_results.iter()
-                .find(|s| &s.glsl_file == glsl_file).unwrap();
+            let gles2_shader = gles2
+                .shader_results
+                .iter()
+                .find(|s| &s.glsl_file == glsl_file)
+                .unwrap();
             shader_package.gles2 = Some(RafxShaderPackageGles2::Src(
                 std::str::from_utf8(&gles2_shader.new_src).unwrap().into(),
             ));
-            shader_package.gles2_reflection = gles2.reflection_data.reflection.iter()
-                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage).cloned();
+            shader_package.gles2_reflection = gles2
+                .reflection_data
+                .reflection
+                .iter()
+                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage)
+                .cloned();
         }
 
         if let Some(gles3) = gles3_output {
-            let gles3_shader = gles3.shader_results.iter()
-                .find(|s| &s.glsl_file == glsl_file).unwrap();
+            let gles3_shader = gles3
+                .shader_results
+                .iter()
+                .find(|s| &s.glsl_file == glsl_file)
+                .unwrap();
             shader_package.gles3 = Some(RafxShaderPackageGles3::Src(
                 std::str::from_utf8(&gles3_shader.new_src).unwrap().into(),
             ));
-            shader_package.gles3_reflection = gles3.reflection_data.reflection.iter()
-                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage).cloned();
+            shader_package.gles3_reflection = gles3
+                .reflection_data
+                .reflection
+                .iter()
+                .find(|r| r.rafx_api_reflection.shader_stage == shader_stage)
+                .cloned();
         }
 
-        shader_package.debug_name = Some(glsl_file.file_name().unwrap().to_string_lossy().to_string());
-        log::info!("packaging {:?} as {:?}", glsl_file, shader_package.vk_reflection);
+        shader_package.debug_name =
+            Some(glsl_file.file_name().unwrap().to_string_lossy().to_string());
+        log::info!(
+            "packaging {:?} as {:?}",
+            glsl_file,
+            shader_package.vk_reflection
+        );
         packages.push(RafxHashedShaderPackage::new(shader_package));
     }
     Ok(packages)
@@ -565,27 +639,44 @@ fn cross_compile_variant(
     package_metal: bool,
     package_gles2: bool,
     package_gles3: bool,
-) -> Result<(
-    PipelineCrossCompileResult,  // vk
-    Option<PipelineCrossCompileResult>,  // dx12
-    Option<PipelineCrossCompileResult>,  // metal
-    Option<PipelineCrossCompileResult>,  // gles2
-    Option<PipelineCrossCompileResult>,  // gles3
-), Box<dyn Error>> {
+) -> Result<
+    (
+        PipelineCrossCompileResult,         // vk
+        Option<PipelineCrossCompileResult>, // dx12
+        Option<PipelineCrossCompileResult>, // metal
+        Option<PipelineCrossCompileResult>, // gles2
+        Option<PipelineCrossCompileResult>, // gles3
+    ),
+    Box<dyn Error>,
+> {
     let vk_output = cross_compile_to_vulkan(cross_compile_params, args, extra_defines)?;
     let dx12_output = if package_dx12 {
         Some(cross_compile_to_dx12(cross_compile_params, extra_defines)?)
-    } else { None };
+    } else {
+        None
+    };
     let metal_output = if package_metal {
         Some(cross_compile_to_metal(cross_compile_params, extra_defines)?)
-    } else { None };
+    } else {
+        None
+    };
     let gles2_output = if package_gles2 {
         Some(cross_compile_to_gles2(cross_compile_params, extra_defines)?)
-    } else { None };
+    } else {
+        None
+    };
     let gles3_output = if package_gles3 {
         Some(cross_compile_to_gles3(cross_compile_params, extra_defines)?)
-    } else { None };
-    Ok((vk_output, dx12_output, metal_output, gles2_output, gles3_output))
+    } else {
+        None
+    };
+    Ok((
+        vk_output,
+        dx12_output,
+        metal_output,
+        gles2_output,
+        gles3_output,
+    ))
 }
 
 struct ShaderCrossCompileResult {
@@ -711,11 +802,7 @@ fn cross_compile_to_vulkan(
         log::trace!("{:?}: create vulkan", glsl_file);
         let mut defines = vec![(PREPROCESSOR_DEF_PLATFORM_VULKAN, "1")];
         defines.extend_from_slice(extra_defines);
-        compile_results.push((
-            glsl_file,
-            compile_glsl(parameters, &defines)?,
-            parameters,
-        ));
+        compile_results.push((glsl_file, compile_glsl(parameters, &defines)?, parameters));
     }
     let builtin_types = shader_types::create_builtin_type_lookup();
     let reflection_data = reflect::reflect_data(
@@ -770,10 +857,7 @@ fn cross_compile_to_dx12(
         log::trace!("{:?}: create dx12", glsl_file);
         let mut defines = vec![(PREPROCESSOR_DEF_PLATFORM_DX12, "1")];
         defines.extend_from_slice(extra_defines);
-        compile_results.push((
-            glsl_file,
-            compile_glsl(parameters, &defines)?,
-        ));
+        compile_results.push((glsl_file, compile_glsl(parameters, &defines)?));
     }
     let builtin_types = shader_types::create_builtin_type_lookup();
     let reflection_data = reflect::reflect_data(
@@ -839,10 +923,7 @@ fn cross_compile_to_metal(
         log::trace!("{:?}: create msl", glsl_file);
         let mut defines = vec![(PREPROCESSOR_DEF_PLATFORM_METAL, "1")];
         defines.extend_from_slice(extra_defines);
-        compile_results.push((
-            glsl_file,
-            compile_glsl(parameters, &defines)?,
-        ));
+        compile_results.push((glsl_file, compile_glsl(parameters, &defines)?));
     }
     let builtin_types = shader_types::create_builtin_type_lookup();
     let reflection_data = reflect::reflect_data(
@@ -922,10 +1003,7 @@ fn cross_compile_to_gles3(
         log::trace!("{:?}: create gles3", glsl_file);
         let mut defines = vec![(PREPROCESSOR_DEF_PLATFORM_GLES3, "1")];
         defines.extend_from_slice(extra_defines);
-        compile_results.push((
-            glsl_file,
-            compile_glsl(parameters, &defines)?,
-        ));
+        compile_results.push((glsl_file, compile_glsl(parameters, &defines)?));
     }
 
     let builtin_types = shader_types::create_builtin_type_lookup();
@@ -983,10 +1061,7 @@ fn cross_compile_to_gles2(
         log::trace!("{:?}: create gles2", glsl_file);
         let mut defines = vec![(PREPROCESSOR_DEF_PLATFORM_GLES2, "1")];
         defines.extend_from_slice(extra_defines);
-        compile_results.push((
-            glsl_file,
-            compile_glsl(parameters, &defines)?,
-        ));
+        compile_results.push((glsl_file, compile_glsl(parameters, &defines)?));
     }
     let builtin_types = shader_types::create_builtin_type_lookup();
     let mut reflection_data = reflect::reflect_data(
