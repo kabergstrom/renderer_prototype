@@ -48,6 +48,16 @@ pub enum RafxQueryPool {
         ))
     ))]
     Empty(RafxQueryPoolEmpty),
+    /// Keeps the facade type inhabited when only a backend without timestamp
+    /// query support is enabled. Device creation still returns an error.
+    #[doc(hidden)]
+    #[cfg(all(
+        not(feature = "rafx-empty"),
+        not(feature = "rafx-dx12"),
+        not(feature = "rafx-vulkan"),
+        any(feature = "rafx-metal", feature = "rafx-gles2", feature = "rafx-gles3")
+    ))]
+    Unsupported,
 }
 
 impl RafxQueryPool {
@@ -69,6 +79,13 @@ impl RafxQueryPool {
                 ))
             ))]
             RafxQueryPool::Empty(inner) => inner.query_count(),
+            #[cfg(all(
+                not(feature = "rafx-empty"),
+                not(feature = "rafx-dx12"),
+                not(feature = "rafx-vulkan"),
+                any(feature = "rafx-metal", feature = "rafx-gles2", feature = "rafx-gles3")
+            ))]
+            RafxQueryPool::Unsupported => 0,
         }
     }
 
@@ -96,6 +113,15 @@ impl RafxQueryPool {
                 ))
             ))]
             RafxQueryPool::Empty(inner) => inner.read_timestamps(first_query, results),
+            #[cfg(all(
+                not(feature = "rafx-empty"),
+                not(feature = "rafx-dx12"),
+                not(feature = "rafx-vulkan"),
+                any(feature = "rafx-metal", feature = "rafx-gles2", feature = "rafx-gles3")
+            ))]
+            RafxQueryPool::Unsupported => {
+                Err("GPU timestamp queries are not implemented on the active backend")?
+            }
         }
     }
 
