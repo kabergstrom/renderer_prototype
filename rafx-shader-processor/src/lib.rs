@@ -121,6 +121,109 @@ pub struct ShaderProcessorArgs {
     pub for_rafx_framework_crate: bool,
 }
 
+/// One in-memory GLSL stage for asset-pipeline cooking. Includes must already
+/// be expanded through the caller's dependency-tracked asset reads; the
+/// processor never consults the ambient source filesystem for this API.
+pub struct VulkanShaderStageSource<'a> {
+    pub virtual_path: &'a str,
+    pub source: &'a str,
+}
+
+/// Compile and package a Vulkan-only pipeline entirely from dependency-tracked
+/// in-memory stage sources.
+pub fn compile_vulkan_pipeline(
+    stages: &[VulkanShaderStageSource<'_>],
+    optimize: bool,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    if stages.is_empty() {
+        Err("a pipeline must contain at least one shader stage")?;
+    }
+    let args = ShaderProcessorArgs {
+        glsl_file: None,
+        spv_file: None,
+        rs_file: None,
+        dx12_generated_src_file: None,
+        metal_generated_src_file: None,
+        gles2_generated_src_file: None,
+        gles3_generated_src_file: None,
+        cooked_shader_file: None,
+        glsl_files: None,
+        spv_path: None,
+        rs_lib_path: None,
+        rs_mod_path: None,
+        dx12_generated_src_path: None,
+        metal_generated_src_path: None,
+        gles2_generated_src_path: None,
+        gles3_generated_src_path: None,
+        cooked_shaders_path: None,
+        shader_kind: None,
+        trace: false,
+        optimize_shaders: optimize,
+        package_vk: true,
+        package_dx12: false,
+        package_metal: false,
+        package_gles2: false,
+        package_gles3: false,
+        package_all: false,
+        for_rafx_framework_crate: false,
+    };
+    let mut parameters = Vec::with_capacity(stages.len());
+    for stage in stages {
+        if stage
+            .source
+            .lines()
+            .any(|line| line.trim_start().starts_with("#include"))
+        {
+            Err(format!(
+                "{} contains an unexpanded include",
+                stage.virtual_path
+            ))?;
+        }
+        let path = PathBuf::from(stage.virtual_path);
+        let shader_kind = deduce_default_shader_kind_from_path(&path)
+            .ok_or_else(|| format!("cannot infer shader stage from {}", stage.virtual_path))?;
+        parameters.push((
+            path.clone(),
+            CompileParameters {
+                glsl_file: path,
+                shader_kind,
+                code: stage.source.to_owned(),
+                entry_point_name: "main".to_owned(),
+                compiler: shaderc::Compiler::new()
+                    .ok_or("failed to initialize the shader compiler")?,
+            },
+        ));
+    }
+    let compile_results = parameters
+        .iter()
+        .map(|(_, parameters)| {
+            compile_glsl(parameters, &[(PREPROCESSOR_DEF_PLATFORM_RUST_CODEGEN, "1")])
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let parameter_refs = parameters
+        .iter()
+        .map(|(path, parameters)| (path.as_path(), parameters))
+        .collect::<Vec<_>>();
+    let vk_output = cross_compile_to_vulkan(&parameter_refs, &args, &[])?;
+    let paths = parameters
+        .iter()
+        .map(|(path, _)| path.as_path())
+        .collect::<Vec<_>>();
+    let packages = package_shader_stages(
+        &compile_results,
+        &paths,
+        &args,
+        &vk_output,
+        None,
+        None,
+        None,
+        None,
+    )?;
+    let vertex_channels = codegen::compute_vertex_channels_from_results(&compile_results);
+    let pipeline = RafxPipelinePackage::new(packages).with_vertex_channels(vertex_channels);
+    Ok(bincode::serialize(&pipeline)?)
+}
+
 pub fn run(args: &ShaderProcessorArgs) -> Result<(), Box<dyn Error>> {
     log::trace!("Shader processor args: {:#?}", args);
     if args.rs_lib_path.is_some() && args.rs_mod_path.is_some() {
@@ -178,6 +281,39 @@ pub fn run(args: &ShaderProcessorArgs) -> Result<(), Box<dyn Error>> {
         process_directory(glsl_files, &args, &rs_file_option)
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod in_memory_tests {
+    use super::*;
+
+    #[test]
+    fn compiles_a_real_vulkan_compute_pipeline_without_filesystem_inputs() {
+        let bytes = compile_vulkan_pipeline(
+            &[VulkanShaderStageSource {
+                virtual_path: "asset/basic.comp",
+                source: "#version 450\nlayout(local_size_x=1, local_size_y=1, local_size_z=1) in;\nvoid main() {}\n",
+            }],
+            false,
+        )
+        .unwrap();
+        let package: RafxPipelinePackage = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(package.shaders.len(), 1);
+        assert!(package.shaders[0].shader_package().vk.is_some());
+    }
+
+    #[test]
+    fn rejects_unexpanded_includes() {
+        let error = compile_vulkan_pipeline(
+            &[VulkanShaderStageSource {
+                virtual_path: "asset/basic.comp",
+                source: "#version 450\n#include \"ambient.glsl\"\nvoid main() {}\n",
+            }],
+            false,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("unexpanded include"));
     }
 }
 
