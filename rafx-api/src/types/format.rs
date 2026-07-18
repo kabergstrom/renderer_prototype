@@ -15,6 +15,7 @@ use windows::Win32::Graphics::Dxgi::Common as DxgiCommon;
 //TODO: Try using Some/None instead of UNDEFINED format
 
 /// Describes the encoding of an image or buffer.
+#[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde-support", derive(Serialize, Deserialize))]
 #[allow(non_camel_case_types)]
@@ -204,6 +205,37 @@ pub enum RafxFormat {
     ASTC_12X10_SRGB_BLOCK,
     ASTC_12X12_UNORM_BLOCK,
     ASTC_12X12_SRGB_BLOCK,
+}
+
+impl TryFrom<u8> for RafxFormat {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if value <= Self::ASTC_12X12_SRGB_BLOCK as u8 {
+            // SAFETY: `RafxFormat` is `repr(u8)` and its variants are the
+            // contiguous default discriminants 0..=184.
+            Ok(unsafe { std::mem::transmute::<u8, Self>(value) })
+        } else {
+            Err(())
+        }
+    }
+}
+
+const _: () = assert!(RafxFormat::UNDEFINED as u8 == 0);
+const _: () = assert!(RafxFormat::ASTC_12X12_SRGB_BLOCK as u8 == 184);
+
+#[cfg(test)]
+mod discriminant_tests {
+    use super::RafxFormat;
+
+    #[test]
+    fn every_wire_discriminant_round_trips() {
+        for value in 0..=RafxFormat::ASTC_12X12_SRGB_BLOCK as u8 {
+            assert_eq!(RafxFormat::try_from(value).unwrap() as u8, value);
+        }
+        assert!(RafxFormat::try_from(185).is_err());
+        assert!(RafxFormat::try_from(u8::MAX).is_err());
+    }
 }
 
 impl Default for RafxFormat {
