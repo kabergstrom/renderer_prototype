@@ -71,10 +71,13 @@ struct SwapchainInfo {
 
 //TODO: Allow these to be overridden when setting up vulkan?
 const VSYNC_ON_PRESENT_MODES: [VkPresentMode; 1] = [VkPresentMode::Fifo];
+// Immediate before FifoRelaxed: relaxed still blocks on vblank whenever a
+// frame is on time, which stalls presents where the display fakes a slow
+// vblank (X with the monitor powered down fakes ~1 Hz).
 const VSYNC_OFF_PRESENT_MODES: [VkPresentMode; 4] = [
     VkPresentMode::Mailbox,
-    VkPresentMode::FifoRelaxed,
     VkPresentMode::Immediate,
+    VkPresentMode::FifoRelaxed,
     VkPresentMode::Fifo,
 ];
 
