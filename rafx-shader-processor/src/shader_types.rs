@@ -852,16 +852,16 @@ fn verify_layout(
 
                 let element_count = element_count(&array_sizes);
                 if size != size_from_reflection * element_count {
-                    println!("alignment {}", alignment);
                     return Err(format!(
-                        "Found a mismatch between logic and compiled spv alignments in type {} for layout {:?}. Logic size: {} SPV size is: {} ({} * {} elements, array sizes {:?})",
+                        "Found a mismatch between logic and compiled spv alignments in type {} for layout {:?}. Logic size: {} SPV size is: {} ({} * {} elements, array sizes {:?}, alignment {})",
                         type_name,
                         layout,
                         size,
                         size_from_reflection * element_count,
                         size_from_reflection,
                         element_count,
-                        array_sizes
+                        array_sizes,
+                        alignment
                     ));
                 }
             }
