@@ -1130,9 +1130,12 @@ impl RafxCommandBufferDx12 {
 
         let dst_x = params.copy_offset.width;
         let dst_y = params.copy_offset.height;
+        // A block-compressed box spans whole blocks, also on mips smaller
+        // than one block (their storage is a whole block).
+        let (box_width, box_height) = block_extent(dst_texture.texture_def().format, &region);
         let mut src_box = d3d12::D3D12_BOX::default();
-        src_box.right = region.width;
-        src_box.bottom = region.height;
+        src_box.right = box_width;
+        src_box.bottom = box_height;
         src_box.back = region.depth;
         let src_box: Option<*const d3d12::D3D12_BOX> = if has_extents {
             Some(std::ptr::addr_of!(src_box))
@@ -1220,11 +1223,14 @@ impl RafxCommandBufferDx12 {
         dst.pResource = ::windows::core::ManuallyDrop::new(dst_buffer.dx12_resource());
         dst.Anonymous.PlacedFootprint = placed_footprint;
 
+        // A block-compressed box spans whole blocks, also on mips smaller
+        // than one block (their storage is a whole block).
+        let (box_width, box_height) = block_extent(src_texture.texture_def().format, &region);
         let mut src_box = d3d12::D3D12_BOX::default();
         src_box.left = params.copy_offset.width;
         src_box.top = params.copy_offset.height;
-        src_box.right = params.copy_offset.width + region.width;
-        src_box.bottom = params.copy_offset.height + region.height;
+        src_box.right = params.copy_offset.width + box_width;
+        src_box.bottom = params.copy_offset.height + box_height;
         src_box.back = region.depth;
         let src_box: Option<*const d3d12::D3D12_BOX> = if has_extents {
             Some(std::ptr::addr_of!(src_box))
@@ -1422,6 +1428,14 @@ fn copy_region(
         height: mip_extent(extents.height, texture_def.extents.height),
         depth: mip_extent(extents.depth, texture_def.extents.depth),
     }
+}
+
+/// Width and height of `region` rounded up to whole texel blocks of `format`.
+fn block_extent(format: RafxFormat, region: &RafxExtents3D) -> (u32, u32) {
+    (
+        region.width.next_multiple_of(format.block_width_in_pixels()),
+        region.height.next_multiple_of(format.block_height_in_pixels()),
+    )
 }
 
 /// Describe the buffer side of an explicit-extents copy by the copied region
