@@ -7,10 +7,10 @@ use crate::{
     RafxBarrierQueueTransition, RafxBufferBarrier, RafxCmdCopyBufferToBufferParams,
     RafxCmdCopyBufferToTextureParams, RafxCmdCopyTextureToBufferParams,
     RafxCmdCopyTextureToTextureParams, RafxColorRenderTargetBinding, RafxCommandBufferDef,
-    RafxDepthStencilRenderTargetBinding, RafxDescriptorIndex, RafxExtents3D,
+    RafxDepthStencilRenderTargetBinding, RafxDescriptorIndex, RafxExtents3D, RafxFormat,
     RafxIndexBufferBinding, RafxIndexType, RafxLoadOp, RafxMemoryUsage, RafxPipelineType,
     RafxQueueType, RafxResourceState, RafxResourceType, RafxResult, RafxTextureBarrier,
-    RafxVertexBufferBinding,
+    RafxTextureDef, RafxVertexBufferBinding,
 };
 use rafx_base::trust_cell::TrustCell;
 use std::mem::ManuallyDrop;
@@ -1100,6 +1100,24 @@ impl RafxCommandBufferDx12 {
 
         placed_footprint.Offset = params.buffer_offset;
 
+        // Explicit extents are the copied region of this mip (as on Vulkan);
+        // the buffer holds just that region, so the footprint describes it.
+        let has_extents = params.buffer_extents.width > 0
+            || params.buffer_extents.height > 0
+            || params.buffer_extents.depth > 0;
+        let region = copy_region(
+            dst_texture.texture_def(),
+            params.mip_level,
+            &params.buffer_extents,
+        );
+        if has_extents {
+            region_footprint(
+                &mut placed_footprint.Footprint,
+                dst_texture.texture_def().format,
+                &region,
+            );
+        }
+
         let mut src = d3d12::D3D12_TEXTURE_COPY_LOCATION::default();
         src.Type = d3d12::D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
         src.pResource = ::windows::core::ManuallyDrop::new(src_buffer.dx12_resource());
@@ -1112,19 +1130,10 @@ impl RafxCommandBufferDx12 {
 
         let dst_x = params.copy_offset.width;
         let dst_y = params.copy_offset.height;
-        let has_extents = params.buffer_extents.width > 0
-            || params.buffer_extents.height > 0
-            || params.buffer_extents.depth > 0;
         let mut src_box = d3d12::D3D12_BOX::default();
-        src_box.right = params.buffer_extents.width;
-        src_box.bottom = params.buffer_extents.height;
-        // depth == 0 means "full depth" (matching the Vulkan backend's
-        // interpretation); the footprint's depth is already per-subresource.
-        src_box.back = if params.buffer_extents.depth > 0 {
-            params.buffer_extents.depth
-        } else {
-            placed_footprint.Footprint.Depth.max(1)
-        };
+        src_box.right = region.width;
+        src_box.bottom = region.height;
+        src_box.back = region.depth;
         let src_box: Option<*const d3d12::D3D12_BOX> = if has_extents {
             Some(std::ptr::addr_of!(src_box))
         } else {
@@ -1181,6 +1190,24 @@ impl RafxCommandBufferDx12 {
 
         placed_footprint.Offset = params.buffer_offset;
 
+        // Explicit extents are the copied region of this mip (as on Vulkan);
+        // the buffer receives just that region, so the footprint describes it.
+        let has_extents = params.buffer_extents.width > 0
+            || params.buffer_extents.height > 0
+            || params.buffer_extents.depth > 0;
+        let region = copy_region(
+            src_texture.texture_def(),
+            params.mip_level,
+            &params.buffer_extents,
+        );
+        if has_extents {
+            region_footprint(
+                &mut placed_footprint.Footprint,
+                src_texture.texture_def().format,
+                &region,
+            );
+        }
+
         // Src = texture (SUBRESOURCE_INDEX)
         let mut src = d3d12::D3D12_TEXTURE_COPY_LOCATION::default();
         src.Type = d3d12::D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
@@ -1193,19 +1220,12 @@ impl RafxCommandBufferDx12 {
         dst.pResource = ::windows::core::ManuallyDrop::new(dst_buffer.dx12_resource());
         dst.Anonymous.PlacedFootprint = placed_footprint;
 
-        let has_extents = params.buffer_extents.width > 0
-            || params.buffer_extents.height > 0
-            || params.buffer_extents.depth > 0;
         let mut src_box = d3d12::D3D12_BOX::default();
         src_box.left = params.copy_offset.width;
         src_box.top = params.copy_offset.height;
-        src_box.right = params.copy_offset.width + params.buffer_extents.width;
-        src_box.bottom = params.copy_offset.height + params.buffer_extents.height;
-        src_box.back = if params.buffer_extents.depth > 0 {
-            params.buffer_extents.depth
-        } else {
-            1
-        };
+        src_box.right = params.copy_offset.width + region.width;
+        src_box.bottom = params.copy_offset.height + region.height;
+        src_box.back = region.depth;
         let src_box: Option<*const d3d12::D3D12_BOX> = if has_extents {
             Some(std::ptr::addr_of!(src_box))
         } else {
@@ -1381,4 +1401,44 @@ impl RafxCommandBufferDx12 {
         //     }
         // }
     }
+}
+
+/// The region of mip `mip_level` a copy with `extents` covers: a zero
+/// component is the mip's full size in that dimension, as on Vulkan.
+fn copy_region(
+    texture_def: &RafxTextureDef,
+    mip_level: u8,
+    extents: &RafxExtents3D,
+) -> RafxExtents3D {
+    let mip_extent = |explicit: u32, full: u32| {
+        if explicit != 0 {
+            explicit
+        } else {
+            1.max(full >> mip_level)
+        }
+    };
+    RafxExtents3D {
+        width: mip_extent(extents.width, texture_def.extents.width),
+        height: mip_extent(extents.height, texture_def.extents.height),
+        depth: mip_extent(extents.depth, texture_def.extents.depth),
+    }
+}
+
+/// Describe the buffer side of an explicit-extents copy by the copied region
+/// itself: rows of whole texel blocks, pitched to
+/// D3D12_TEXTURE_DATA_PITCH_ALIGNMENT, `Height / block height` rows per slice.
+/// Width and Height round up to whole blocks as footprints of
+/// block-compressed formats must.
+fn region_footprint(
+    footprint: &mut d3d12::D3D12_SUBRESOURCE_FOOTPRINT,
+    format: RafxFormat,
+    region: &RafxExtents3D,
+) {
+    let block_width = format.block_width_in_pixels();
+    let block_height = format.block_height_in_pixels();
+    let row_bytes = region.width.div_ceil(block_width) * format.block_or_pixel_size_in_bytes();
+    footprint.Width = region.width.next_multiple_of(block_width);
+    footprint.Height = region.height.next_multiple_of(block_height);
+    footprint.Depth = region.depth;
+    footprint.RowPitch = row_bytes.next_multiple_of(d3d12::D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
 }
