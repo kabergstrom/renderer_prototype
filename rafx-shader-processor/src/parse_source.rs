@@ -793,10 +793,7 @@ fn find_annotations_in_comments(comments: &[CommentText]) -> Vec<AnnotationText>
 
                             let mut text = Vec::default();
                             std::mem::swap(&mut text, &mut annotation);
-                            annotations.push(AnnotationText {
-                                position: comment.position,
-                                text,
-                            });
+                            annotations.push(AnnotationText { text });
                         }
                     }
                 }
@@ -855,7 +852,6 @@ pub struct DeclarationText {
 #[derive(Debug)]
 pub struct AnnotationText {
     pub text: Vec<char>,
-    pub position: usize,
 }
 
 pub struct ShaderText {

@@ -471,32 +471,13 @@ pub(crate) fn get_hlsl_register_assignments(
     }
 
     if !push_constant_stages.is_empty() {
-        let push_constant_execution_models = shader_stage_to_execution_model(push_constant_stages);
-        let space_register = spirv_cross2::compile::hlsl::RegisterBinding {
-            space: push_constant_space_index,
-            register: 0,
-        };
-        for execution_model in push_constant_execution_models {
-            // bindings.push(spirv_cross2::hlsl::HlslResourceBinding {
-            //     desc_set: !0,
-            //     binding: 0,
-            //     stage: execution_model,
-            //     cbv: space_register,
-            //     uav: space_register,
-            //     srv: space_register,
-            //     sampler: space_register,
-            // })
+        // Each stage would get an HlslAssignment binding
+        // ResourceBinding::PushConstantBuffer to register 0 of
+        // push_constant_space_index for cbv/uav/srv/sampler alike. That mapping
+        // is unverified since the spirv_cross2 port, so DX12 push constants
+        // stop here until it is.
+        if !shader_stage_to_execution_model(push_constant_stages).is_empty() {
             todo!("this is sus, the space_register doesn't vary?");
-            bindings.push(HlslAssignment {
-                execution_model,
-                binding: spirv_cross2::compile::hlsl::ResourceBinding::PushConstantBuffer,
-                bind_target: spirv_cross2::compile::hlsl::BindTarget {
-                    cbv: Some(space_register),
-                    uav: Some(space_register),
-                    srv: Some(space_register),
-                    sampler: Some(space_register),
-                },
-            });
         }
     }
 

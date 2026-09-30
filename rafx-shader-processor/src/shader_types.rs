@@ -16,12 +16,6 @@ fn next_power_of_2(mut v: usize) -> usize {
 }
 
 #[derive(Debug)]
-pub(crate) enum StructOrBinding {
-    Struct(usize),
-    Binding(usize),
-}
-
-#[derive(Debug)]
 pub(crate) struct TypeAlignmentInfo {
     pub(crate) rust_type: String,
     pub(crate) size: usize,
@@ -32,7 +26,6 @@ pub(crate) struct TypeAlignmentInfo {
 
 #[derive(Debug)]
 pub(crate) struct UserType {
-    pub(crate) _struct_or_binding: StructOrBinding,
     pub(crate) type_name: String,
     pub(crate) fields: Arc<Vec<ParseFieldResult>>,
     //export_name: Option<String>,
@@ -71,12 +64,11 @@ pub(crate) fn create_user_type_lookup(
     //
     // Populate user types from structs
     //
-    for (index, s) in parsed_declarations.structs.iter().enumerate() {
+    for s in &parsed_declarations.structs {
         //let export_name = s.annotations.export.as_ref().map(|x| x.0.clone());
         let old = user_types.insert(
             s.parsed.type_name.clone(),
             UserType {
-                _struct_or_binding: StructOrBinding::Struct(index),
                 type_name: s.parsed.type_name.clone(),
                 fields: s.parsed.fields.clone(),
                 //export_name,
@@ -97,7 +89,7 @@ pub(crate) fn create_user_type_lookup(
     //
     // Populate user types from bindings
     //
-    for (index, b) in parsed_declarations.bindings.iter().enumerate() {
+    for b in &parsed_declarations.bindings {
         if let Some(fields) = &b.parsed.fields {
             //let struct_name_postfix = determine_binding_type(b)?.struct_name_postfix();
             //let struct_name_postfix = "";
@@ -108,7 +100,6 @@ pub(crate) fn create_user_type_lookup(
             let old = user_types.insert(
                 b.parsed.type_name.clone(),
                 UserType {
-                    _struct_or_binding: StructOrBinding::Binding(index),
                     type_name: b.parsed.type_name.clone(),
                     fields: fields.clone(),
                     //export_name,
@@ -182,7 +173,6 @@ pub struct StructMember {
     pub ty: String,
     pub size: usize,
     pub offset: usize,
-    pub align: usize,
     pub default_value: String,
 }
 
@@ -190,7 +180,6 @@ pub struct StructMember {
 pub struct GenerateStructResult {
     pub name: String,
     pub size: usize,
-    pub align: usize,
     pub members: Vec<StructMember>,
 }
 
@@ -291,7 +280,6 @@ pub(crate) fn generate_struct(
                 name: format!("_padding{}", pad_var_count),
                 ty: format!("[u8; {}]", required_padding),
                 size: required_padding,
-                align: 1,
                 offset: rust_offset,
                 default_value: format!("[u8::default(); {}]", required_padding),
             };
@@ -356,7 +344,6 @@ pub(crate) fn generate_struct(
             name: f.field_name.clone(),
             ty: wrap_in_array(&rust_type_name, &f.array_sizes),
             size: rust_size,
-            align: rust_alignment,
             offset: rust_offset,
             default_value: wrap_in_array(
                 &format!("<{}>::default()", &rust_type_name),
@@ -408,7 +395,6 @@ pub(crate) fn generate_struct(
             name: format!("_padding{}", pad_var_count),
             ty: format!("[u8; {}]", required_padding),
             size: required_padding,
-            align: 1,
             offset: rust_offset,
             default_value: format!("[u8::default(); {}]", required_padding),
         };
@@ -416,12 +402,9 @@ pub(crate) fn generate_struct(
         members.push(struct_member);
     }
 
-    let struct_align = determine_alignment_c(builtin_types, user_types, &type_name, &[])?;
-
     Ok(GenerateStructResult {
         name: struct_name,
         size: full_gpu_size,
-        align: struct_align,
         members,
     })
 }

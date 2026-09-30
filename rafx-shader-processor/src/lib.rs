@@ -466,7 +466,8 @@ fn process_directory(
             .collect::<Vec<_>>();
         let builtin_types = shader_types::create_builtin_type_lookup();
         log::info!("{:?}: reflect data", stem);
-        let reflection_data = reflect::reflect_data(&builtin_types, &compile_results, true)
+        // Only its errors matter here: generated code no longer reads the data.
+        reflect::reflect_data(&builtin_types, &compile_results, true)
             .map_err(|x| format!("reflect_data: {}", x.to_string()))?;
         let glsl_file = stem.join(&*file_name);
         let (rust_code, vertex_channels) = if rs_file.is_some() {
@@ -474,8 +475,6 @@ fn process_directory(
             let (code, channels) = codegen::generate_rust_code(
                 stem.to_string_lossy().into(),
                 &compile_results,
-                &reflection_data,
-                args.for_rafx_framework_crate,
             )?;
             (Some(code), channels)
         } else {

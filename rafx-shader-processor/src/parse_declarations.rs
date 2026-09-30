@@ -405,7 +405,6 @@ pub(crate) struct ParseBindingResult {
     pub(crate) type_name: String,
     pub(crate) fields: Option<Arc<Vec<ParseFieldResult>>>,
     pub(crate) instance_name: String,
-    pub(crate) array_sizes: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -620,7 +619,8 @@ fn try_parse_binding_or_group_size(
         )
     })?;
 
-    let array_sizes = parse_array_sizes(code, &mut position)?;
+    // Only consumed: descriptor array counts come from reflection.
+    parse_array_sizes(code, &mut position)?;
 
     crate::parse_source::skip_whitespace(code, &mut position);
     crate::parse_source::try_consume_literal(code, &mut position, ";").ok_or_else(|| {
@@ -648,7 +648,6 @@ fn try_parse_binding_or_group_size(
             type_name,
             fields,
             instance_name,
-            array_sizes,
         },
     )))
 }
