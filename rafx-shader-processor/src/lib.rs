@@ -295,6 +295,19 @@ mod in_memory_tests {
     }
 
     #[test]
+    fn rejects_inactive_includes_before_reflection_parser_reads_files() {
+        for optimize in [false, true] {
+            let error = compile_vulkan_pipeline(
+                &[VulkanShaderStageSource {
+                    virtual_path: "asset/inactive.comp",
+                    source: "#version 450\n#if 0\n#include \"ambient.glsl\"\n#endif\nlayout(local_size_x=1) in;\nvoid main() {}\n",
+                }], optimize,
+            ).unwrap_err();
+            assert!(error.to_string().contains("unexpanded include"));
+        }
+    }
+
+    #[test]
     fn rejects_unexpanded_includes() {
         for directive in [
             "#include",
@@ -906,6 +919,9 @@ fn compile_glsl(
         log::trace!("{:?}: parse glsl", parameters.glsl_file);
 
         let mut preprocessor_state = PreprocessorState::default();
+        if !parameters.allow_ambient_includes {
+            preprocessor_state.reject_includes();
+        }
         for (name, value) in defines {
             preprocessor_state.add_define(name.to_string(), value.to_string());
         }

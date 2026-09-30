@@ -919,9 +919,13 @@ impl IfdefStack {
 pub struct PreprocessorState {
     defines: FnvHashMap<String, String>,
     ifdef_stack: IfdefStack,
+    reject_includes: bool,
 }
 
 impl PreprocessorState {
+    pub(crate) fn reject_includes(&mut self) {
+        self.reject_includes = true;
+    }
     // For setting state directly
     pub fn add_define(
         &mut self,
@@ -1083,6 +1087,9 @@ pub(crate) fn parse_shader_source_text(
         {
             match consume_directive_result.directive_name.as_str() {
                 "include" => {
+                    if preprocessor_state.reject_includes {
+                        return Err("unexpanded include: in-memory sources must be dependency-tracked".into());
+                    }
                     let directive = try_parse_include(&code, position);
                     // assert!(directive.is_some());
                     // println!("include: {:?}", directive);
