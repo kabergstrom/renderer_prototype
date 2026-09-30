@@ -169,16 +169,6 @@ pub fn compile_vulkan_pipeline(
     };
     let mut parameters = Vec::with_capacity(stages.len());
     for stage in stages {
-        if stage
-            .source
-            .lines()
-            .any(|line| line.trim_start().starts_with("#include"))
-        {
-            Err(format!(
-                "{} contains an unexpanded include",
-                stage.virtual_path
-            ))?;
-        }
         let path = PathBuf::from(stage.virtual_path);
         let shader_kind = deduce_default_shader_kind_from_path(&path)
             .ok_or_else(|| format!("cannot infer shader stage from {}", stage.virtual_path))?;
@@ -189,6 +179,7 @@ pub fn compile_vulkan_pipeline(
                 shader_kind,
                 code: stage.source.to_owned(),
                 entry_point_name: "main".to_owned(),
+                allow_ambient_includes: false,
                 compiler: shaderc::Compiler::new()
                     .ok_or("failed to initialize the shader compiler")?,
             },
@@ -305,15 +296,28 @@ mod in_memory_tests {
 
     #[test]
     fn rejects_unexpanded_includes() {
-        let error = compile_vulkan_pipeline(
-            &[VulkanShaderStageSource {
-                virtual_path: "asset/basic.comp",
-                source: "#version 450\n#include \"ambient.glsl\"\nvoid main() {}\n",
-            }],
-            false,
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("unexpanded include"));
+        for directive in [
+            "#include",
+            "# include",
+            "#\tinclude",
+            "# /* comment */ include",
+        ] {
+            let source = format!("#version 450\n{directive} \"ambient.glsl\"\nvoid main() {{}}\n");
+            for optimize in [false, true] {
+                let error = compile_vulkan_pipeline(
+                    &[VulkanShaderStageSource {
+                        virtual_path: "asset/basic.comp",
+                        source: &source,
+                    }],
+                    optimize,
+                )
+                .unwrap_err();
+                assert!(
+                    error.to_string().contains("unexpanded include"),
+                    "{directive}: {error}"
+                );
+            }
+        }
     }
 }
 
@@ -429,6 +433,7 @@ fn process_directory(
                 shader_kind,
                 code: code.clone(),
                 entry_point_name: "main".to_string(),
+                allow_ambient_includes: true,
                 compiler,
             };
 
@@ -629,6 +634,24 @@ struct CompileParameters {
     code: String,
     entry_point_name: String,
     compiler: Compiler,
+    allow_ambient_includes: bool,
+}
+
+impl CompileParameters {
+    fn configure_includes(
+        &self,
+        options: &mut shaderc::CompileOptions<'_>,
+    ) {
+        if self.allow_ambient_includes {
+            options.set_include_callback(include::shaderc_include_callback);
+        } else {
+            options.set_include_callback(|name, _, _, _| {
+                Err(format!(
+                    "unexpanded include {name}: in-memory sources must be dependency-tracked"
+                ))
+            });
+        }
+    }
 }
 
 /// Pre-scan GLSL source text for `@[vertex_formats(["PC", "PU"])]` annotation.
@@ -864,7 +887,7 @@ fn compile_glsl(
     log::trace!("{:?}: compile unoptimized", parameters.glsl_file);
     let (unoptimized_spv, parsed_source) = {
         let mut compile_options = shaderc::CompileOptions::new().unwrap();
-        compile_options.set_include_callback(include::shaderc_include_callback);
+        parameters.configure_includes(&mut compile_options);
         compile_options.set_generate_debug_info();
         for (name, value) in defines {
             compile_options.add_macro_definition(name, Some(value));
@@ -954,7 +977,7 @@ fn cross_compile_to_vulkan(
     for (glsl_file, compile_result, parameters) in compile_results {
         let vk_spv = if args.optimize_shaders {
             let mut compile_options = shaderc::CompileOptions::new().unwrap();
-            compile_options.set_include_callback(include::shaderc_include_callback);
+            parameters.configure_includes(&mut compile_options);
             compile_options.set_optimization_level(shaderc::OptimizationLevel::Performance);
             //NOTE: Could also use shaderc::OptimizationLevel::Size
 
