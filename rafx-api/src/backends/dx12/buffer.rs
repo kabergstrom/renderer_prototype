@@ -317,34 +317,23 @@ impl RafxBufferDx12 {
             .resource_type
             .intersects(RafxResourceType::BUFFER)
         {
-            //println!("creating srv");
             let mut desc = d3d12::D3D12_SHADER_RESOURCE_VIEW_DESC::default();
             desc.Format = buffer_def.format.into();
             desc.ViewDimension = d3d12::D3D12_SRV_DIMENSION_BUFFER;
             desc.Shader4ComponentMapping = d3d12::D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-            desc.Anonymous.Buffer.FirstElement = buffer_def.elements.element_begin_index;
-            desc.Anonymous.Buffer.NumElements = buffer_def.elements.element_count as _;
-            desc.Anonymous.Buffer.StructureByteStride = buffer_def.elements.element_stride as _;
-            desc.Anonymous.Buffer.Flags = d3d12::D3D12_BUFFER_SRV_FLAG_NONE;
-
-            //TODO: RAW buffer support?
-
-            //println!("format: {:?} stride {} count: {}", buffer_def.format, buffer_def.elements.element_stride, buffer_def.elements.element_count);
-
-            // Can't create typed structured buffer,
-            // see https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_buffer_srv
-            if desc.Format != super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
-                desc.Anonymous.Buffer.StructureByteStride = 0;
+            if desc.Format == super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
+                let (byte_offset, byte_size) = element_byte_range(buffer_def);
+                let range = raw_buffer_range(byte_offset, byte_size)?;
+                desc.Format = super::dxgi::Common::DXGI_FORMAT_R32_TYPELESS;
+                desc.Anonymous.Buffer.FirstElement = range.first_word;
+                desc.Anonymous.Buffer.NumElements = range.word_count;
+                desc.Anonymous.Buffer.Flags = d3d12::D3D12_BUFFER_SRV_FLAG_RAW;
+            } else {
+                // Typed buffer: a typed view cannot also be structured.
+                desc.Anonymous.Buffer.FirstElement = buffer_def.elements.element_begin_index;
+                desc.Anonymous.Buffer.NumElements = buffer_def.elements.element_count as _;
+                desc.Anonymous.Buffer.Flags = d3d12::D3D12_BUFFER_SRV_FLAG_NONE;
             }
-
-            if desc.Format == super::dxgi::Common::DXGI_FORMAT_UNKNOWN
-                && buffer_def.elements.element_stride == 0
-            {
-                desc.Anonymous.Buffer.StructureByteStride = 4;
-                desc.Anonymous.Buffer.NumElements = buffer_def.size as u32 / 4;
-            }
-
-            //assert!(buffer_def.elements.)
 
             let descriptor_id = device_context
                 .inner
@@ -374,33 +363,25 @@ impl RafxBufferDx12 {
             .resource_type
             .intersects(RafxResourceType::BUFFER_READ_WRITE)
         {
-            //println!("creating uav");
             let mut desc = d3d12::D3D12_UNORDERED_ACCESS_VIEW_DESC::default();
             desc.Format = buffer_def.format.into();
             desc.ViewDimension = d3d12::D3D12_UAV_DIMENSION_BUFFER;
-            desc.Anonymous.Buffer.FirstElement = buffer_def.elements.element_begin_index;
-            desc.Anonymous.Buffer.NumElements = buffer_def.elements.element_count as _;
-            desc.Anonymous.Buffer.StructureByteStride = buffer_def.elements.element_stride as _;
             desc.Anonymous.Buffer.CounterOffsetInBytes = 0;
-            desc.Anonymous.Buffer.Flags = d3d12::D3D12_BUFFER_UAV_FLAG_NONE;
-
-            //TODO: RAW buffer support?
-            //TODO: Validate format support?
-
-            // Can't create typed structured buffer,
-            // see https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_buffer_srv
-            if desc.Format != super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
-                desc.Anonymous.Buffer.StructureByteStride = 0;
+            if desc.Format == super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
+                let (byte_offset, byte_size) = element_byte_range(buffer_def);
+                let range = raw_buffer_range(byte_offset, byte_size)?;
+                desc.Format = super::dxgi::Common::DXGI_FORMAT_R32_TYPELESS;
+                desc.Anonymous.Buffer.FirstElement = range.first_word;
+                desc.Anonymous.Buffer.NumElements = range.word_count;
+                desc.Anonymous.Buffer.Flags = d3d12::D3D12_BUFFER_UAV_FLAG_RAW;
+            } else {
+                // Typed buffer: a typed view cannot also be structured.
+                desc.Anonymous.Buffer.FirstElement = buffer_def.elements.element_begin_index;
+                desc.Anonymous.Buffer.NumElements = buffer_def.elements.element_count as _;
+                desc.Anonymous.Buffer.Flags = d3d12::D3D12_BUFFER_UAV_FLAG_NONE;
             }
 
-            if desc.Format == super::dxgi::Common::DXGI_FORMAT_UNKNOWN
-                && buffer_def.elements.element_stride == 0
-            {
-                desc.Anonymous.Buffer.StructureByteStride = 4;
-                desc.Anonymous.Buffer.NumElements = buffer_def.size as u32 / 4;
-            }
-
-            //TODO: counter buffer support?
+            // UAV counters are not supported (a raw view cannot have one).
             let descriptor_id = device_context
                 .inner
                 .heaps
@@ -498,4 +479,42 @@ impl Drop for RafxBufferDx12 {
 
         log::trace!("destroyed RafxBufferDx12Inner");
     }
+}
+
+/// A storage-buffer view range in 32-bit words.
+pub(super) struct RawBufferRange {
+    pub first_word: u64,
+    pub word_count: u32,
+}
+
+/// The byte range of a format-less buffer's whole-buffer views. A non-zero
+/// `element_stride` selects `element_count` elements from
+/// `element_begin_index`; zero means 4-byte elements to the end.
+pub(super) fn element_byte_range(buffer_def: &RafxBufferDef) -> (u64, u64) {
+    let elements = &buffer_def.elements;
+    if elements.element_stride == 0 {
+        let byte_offset = elements.element_begin_index * 4;
+        (byte_offset, buffer_def.size.saturating_sub(byte_offset))
+    } else {
+        (
+            elements.element_begin_index * elements.element_stride,
+            elements.element_count * elements.element_stride,
+        )
+    }
+}
+
+/// spirv-cross emits every storage buffer as a `(RW)ByteAddressBuffer`, which
+/// D3D12 reads through a raw view: `R32_TYPELESS` with the RAW flag, ranged
+/// in whole 32-bit words from a 16-byte aligned offset.
+pub(super) fn raw_buffer_range(byte_offset: u64, byte_size: u64) -> RafxResult<RawBufferRange> {
+    let alignment = d3d12::D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT as u64;
+    if byte_offset % alignment != 0 {
+        Err(format!(
+            "storage buffer view offset {byte_offset} is not {alignment}-byte aligned (D3D12 raw views)"
+        ))?;
+    }
+    Ok(RawBufferRange {
+        first_word: byte_offset / 4,
+        word_count: (byte_size / 4) as u32,
+    })
 }

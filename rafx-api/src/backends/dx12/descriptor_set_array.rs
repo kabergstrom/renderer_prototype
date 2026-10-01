@@ -883,26 +883,31 @@ impl RafxDescriptorSetArrayDx12 {
                         desc.Shader4ComponentMapping =
                             super::d3d12::D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
-                        let element_stride = if buffer_def.elements.element_stride > 0 {
-                            buffer_def.elements.element_stride as u64
-                        } else {
-                            4
-                        };
                         let effective_size = if offset_size.size > 0 {
                             offset_size.size
                         } else {
                             buffer_def.size - offset_size.byte_offset
                         };
 
-                        desc.Anonymous.Buffer.FirstElement =
-                            offset_size.byte_offset / element_stride;
-                        desc.Anonymous.Buffer.NumElements =
-                            (effective_size / element_stride) as u32;
-                        desc.Anonymous.Buffer.StructureByteStride = element_stride as u32;
-                        desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_SRV_FLAG_NONE;
-
-                        if desc.Format != super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
-                            desc.Anonymous.Buffer.StructureByteStride = 0;
+                        if desc.Format == super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
+                            let range = super::buffer::raw_buffer_range(
+                                offset_size.byte_offset,
+                                effective_size,
+                            )?;
+                            desc.Format = super::dxgi::Common::DXGI_FORMAT_R32_TYPELESS;
+                            desc.Anonymous.Buffer.FirstElement = range.first_word;
+                            desc.Anonymous.Buffer.NumElements = range.word_count;
+                            desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_SRV_FLAG_RAW;
+                        } else {
+                            let element_stride = match buffer_def.elements.element_stride {
+                                0 => 4,
+                                stride => stride,
+                            };
+                            desc.Anonymous.Buffer.FirstElement =
+                                offset_size.byte_offset / element_stride;
+                            desc.Anonymous.Buffer.NumElements =
+                                (effective_size / element_stride) as u32;
+                            desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_SRV_FLAG_NONE;
                         }
 
                         let handle = device_context
@@ -975,28 +980,33 @@ impl RafxDescriptorSetArrayDx12 {
                         let mut desc = super::d3d12::D3D12_UNORDERED_ACCESS_VIEW_DESC::default();
                         desc.Format = buffer_def.format.into();
                         desc.ViewDimension = super::d3d12::D3D12_UAV_DIMENSION_BUFFER;
+                        desc.Anonymous.Buffer.CounterOffsetInBytes = 0;
 
-                        let element_stride = if buffer_def.elements.element_stride > 0 {
-                            buffer_def.elements.element_stride as u64
-                        } else {
-                            4
-                        };
                         let effective_size = if offset_size.size > 0 {
                             offset_size.size
                         } else {
                             buffer_def.size - offset_size.byte_offset
                         };
 
-                        desc.Anonymous.Buffer.FirstElement =
-                            offset_size.byte_offset / element_stride;
-                        desc.Anonymous.Buffer.NumElements =
-                            (effective_size / element_stride) as u32;
-                        desc.Anonymous.Buffer.StructureByteStride = element_stride as u32;
-                        desc.Anonymous.Buffer.CounterOffsetInBytes = 0;
-                        desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_UAV_FLAG_NONE;
-
-                        if desc.Format != super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
-                            desc.Anonymous.Buffer.StructureByteStride = 0;
+                        if desc.Format == super::dxgi::Common::DXGI_FORMAT_UNKNOWN {
+                            let range = super::buffer::raw_buffer_range(
+                                offset_size.byte_offset,
+                                effective_size,
+                            )?;
+                            desc.Format = super::dxgi::Common::DXGI_FORMAT_R32_TYPELESS;
+                            desc.Anonymous.Buffer.FirstElement = range.first_word;
+                            desc.Anonymous.Buffer.NumElements = range.word_count;
+                            desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_UAV_FLAG_RAW;
+                        } else {
+                            let element_stride = match buffer_def.elements.element_stride {
+                                0 => 4,
+                                stride => stride,
+                            };
+                            desc.Anonymous.Buffer.FirstElement =
+                                offset_size.byte_offset / element_stride;
+                            desc.Anonymous.Buffer.NumElements =
+                                (effective_size / element_stride) as u32;
+                            desc.Anonymous.Buffer.Flags = super::d3d12::D3D12_BUFFER_UAV_FLAG_NONE;
                         }
 
                         let handle = device_context
