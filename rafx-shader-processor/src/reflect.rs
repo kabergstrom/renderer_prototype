@@ -262,10 +262,23 @@ fn get_all_reflected_bindings(
     let mut ro_storage_buffers = Vec::new();
     let mut rw_storage_buffers = Vec::new();
     for buf in all_storage_buffers {
-        if let Some(DecorationValue::Present) = artifact
-            .decoration(buf.id, spirv_cross2::spirv::Decoration::NonWritable)
-            .map_err(|_x| "could not get decoration from reflection data")?
-        {
+        // GLSL `buffer readonly` decorates every block member NonWritable, not
+        // the variable. spirv-cross's HLSL backend reads the members' common
+        // decorations to emit an SRV (ByteAddressBuffer), so the register and
+        // the root signature range must treat it as one too.
+        let variable_readonly = matches!(
+            artifact
+                .decoration(buf.id, spirv_cross2::spirv::Decoration::NonWritable)
+                .map_err(|_x| "could not get decoration from reflection data")?,
+            Some(DecorationValue::Present)
+        );
+        let members_readonly = artifact
+            .buffer_block_decorations(buf.id)
+            .map_err(|_x| "could not get buffer block decorations from reflection data")?
+            .is_some_and(|decorations| {
+                decorations.contains(&spirv_cross2::spirv::Decoration::NonWritable)
+            });
+        if variable_readonly || members_readonly {
             ro_storage_buffers.push(buf);
         } else {
             rw_storage_buffers.push(buf);

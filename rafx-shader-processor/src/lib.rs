@@ -294,6 +294,57 @@ mod in_memory_tests {
         assert!(package.shaders[0].shader_package().vk.is_some());
     }
 
+    /// GLSL `buffer readonly` decorates the block's members NonWritable, not
+    /// the variable; spirv-cross emits it as an SRV (`ByteAddressBuffer`), so
+    /// its register comes from the SRV counter too, not the UAV one.
+    #[test]
+    fn readonly_storage_buffers_take_srv_registers_distinct_from_textures() {
+        let source = "#version 450\n\
+            #extension GL_EXT_samplerless_texture_functions : require\n\
+            layout(local_size_x=1) in;\n\
+            layout(set = 0, binding = 0) uniform texture2D tex_a;\n\
+            layout(set = 0, binding = 1) uniform texture2D tex_b;\n\
+            layout(set = 0, binding = 2, rgba8) uniform writeonly image2D out_img;\n\
+            layout(set = 0, binding = 3) buffer readonly Lights { vec4 v[]; } lights;\n\
+            layout(set = 0, binding = 4) buffer readonly Mats { mat4 m[]; } mats;\n\
+            layout(set = 0, binding = 5) buffer Counters { uint n[]; } counters;\n\
+            void main() {\n\
+                vec4 c = texelFetch(tex_a, ivec2(0), 0) + texelFetch(tex_b, ivec2(0), 0);\n\
+                c += lights.v[0] + mats.m[0][0];\n\
+                counters.n[0] = uint(c.x);\n\
+                imageStore(out_img, ivec2(0), c);\n\
+            }\n";
+        let path = PathBuf::from("asset/registers.comp");
+        let parameters = CompileParameters {
+            glsl_file: path.clone(),
+            shader_kind: shaderc::ShaderKind::Compute,
+            code: source.to_owned(),
+            entry_point_name: "main".to_owned(),
+            allow_ambient_includes: false,
+            compiler: shaderc::Compiler::new().unwrap(),
+        };
+        let output = cross_compile_to_dx12(&[(path.as_path(), &parameters)], &[]).unwrap();
+        let hlsl = String::from_utf8(output.shader_results[0].new_src.clone()).unwrap();
+        let mut registers = std::collections::BTreeMap::new();
+        for line in hlsl.lines() {
+            let Some((declaration, register)) = line.split_once(": register(") else {
+                continue;
+            };
+            let register = register.split(')').next().unwrap().to_owned();
+            if let Some(previous) = registers.insert(register.clone(), declaration.trim().to_owned()) {
+                panic!("{previous} and {} share register({register})\n{hlsl}", declaration.trim());
+            }
+        }
+        assert!(hlsl.contains("RWByteAddressBuffer counters"), "{hlsl}");
+        let readonly = registers
+            .iter()
+            .filter(|(_, d)| d.starts_with("ByteAddressBuffer"))
+            .map(|(r, _)| r.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(readonly.len(), 2, "{hlsl}");
+        assert!(readonly.iter().all(|r| r.starts_with('t')), "{hlsl}");
+    }
+
     #[test]
     fn rejects_inactive_includes_before_reflection_parser_reads_files() {
         for optimize in [false, true] {
