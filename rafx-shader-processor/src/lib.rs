@@ -124,15 +124,16 @@ pub struct ShaderProcessorArgs {
 /// One in-memory GLSL stage for asset-pipeline cooking. Includes must already
 /// be expanded through the caller's dependency-tracked asset reads; the
 /// processor never consults the ambient source filesystem for this API.
-pub struct VulkanShaderStageSource<'a> {
+pub struct ShaderStageSource<'a> {
     pub virtual_path: &'a str,
     pub source: &'a str,
 }
 
-/// Compile and package a Vulkan-only pipeline entirely from dependency-tracked
-/// in-memory stage sources.
-pub fn compile_vulkan_pipeline(
-    stages: &[VulkanShaderStageSource<'_>],
+/// Compile and package a pipeline for Vulkan (SPIR-V) and DX12 (HLSL source,
+/// which the device compiles) entirely from dependency-tracked in-memory
+/// stage sources.
+pub fn compile_pipeline(
+    stages: &[ShaderStageSource<'_>],
     optimize: bool,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     if stages.is_empty() {
@@ -160,7 +161,7 @@ pub fn compile_vulkan_pipeline(
         trace: false,
         optimize_shaders: optimize,
         package_vk: true,
-        package_dx12: false,
+        package_dx12: true,
         package_metal: false,
         package_gles2: false,
         package_gles3: false,
@@ -196,6 +197,7 @@ pub fn compile_vulkan_pipeline(
         .map(|(path, parameters)| (path.as_path(), parameters))
         .collect::<Vec<_>>();
     let vk_output = cross_compile_to_vulkan(&parameter_refs, &args, &[])?;
+    let dx12_output = cross_compile_to_dx12(&parameter_refs, &[])?;
     let paths = parameters
         .iter()
         .map(|(path, _)| path.as_path())
@@ -205,7 +207,7 @@ pub fn compile_vulkan_pipeline(
         &paths,
         &args,
         &vk_output,
-        None,
+        Some(&dx12_output),
         None,
         None,
         None,
@@ -280,9 +282,9 @@ mod in_memory_tests {
     use super::*;
 
     #[test]
-    fn compiles_a_real_vulkan_compute_pipeline_without_filesystem_inputs() {
-        let bytes = compile_vulkan_pipeline(
-            &[VulkanShaderStageSource {
+    fn compiles_a_real_compute_pipeline_without_filesystem_inputs() {
+        let bytes = compile_pipeline(
+            &[ShaderStageSource {
                 virtual_path: "asset/basic.comp",
                 source: "#version 450\nlayout(local_size_x=1, local_size_y=1, local_size_z=1) in;\nvoid main() {}\n",
             }],
@@ -292,6 +294,7 @@ mod in_memory_tests {
         let package: RafxPipelinePackage = bincode::deserialize(&bytes).unwrap();
         assert_eq!(package.shaders.len(), 1);
         assert!(package.shaders[0].shader_package().vk.is_some());
+        assert!(package.shaders[0].shader_package().dx12.is_some());
     }
 
     /// GLSL `buffer readonly` decorates the block's members NonWritable, not
@@ -348,8 +351,8 @@ mod in_memory_tests {
     #[test]
     fn rejects_inactive_includes_before_reflection_parser_reads_files() {
         for optimize in [false, true] {
-            let error = compile_vulkan_pipeline(
-                &[VulkanShaderStageSource {
+            let error = compile_pipeline(
+                &[ShaderStageSource {
                     virtual_path: "asset/inactive.comp",
                     source: "#version 450\n#if 0\n#include \"ambient.glsl\"\n#endif\nlayout(local_size_x=1) in;\nvoid main() {}\n",
                 }], optimize,
@@ -368,8 +371,8 @@ mod in_memory_tests {
         ] {
             let source = format!("#version 450\n{directive} \"ambient.glsl\"\nvoid main() {{}}\n");
             for optimize in [false, true] {
-                let error = compile_vulkan_pipeline(
-                    &[VulkanShaderStageSource {
+                let error = compile_pipeline(
+                    &[ShaderStageSource {
                         virtual_path: "asset/basic.comp",
                         source: &source,
                     }],
@@ -1082,18 +1085,24 @@ fn cross_compile_to_dx12(
         log::trace!("{:?}: create dx12", glsl_file);
         let mut defines = vec![(PREPROCESSOR_DEF_PLATFORM_DX12, "1")];
         defines.extend_from_slice(extra_defines);
-        compile_results.push((glsl_file, compile_glsl(parameters, &defines)?));
+        compile_results.push((glsl_file, parameters, compile_glsl(parameters, &defines)?));
     }
     let builtin_types = shader_types::create_builtin_type_lookup();
     let reflection_data = reflect::reflect_data(
         &builtin_types,
-        compile_results.iter().map(|(_, c)| c).collect::<Vec<_>>(),
+        compile_results.iter().map(|(_, _, c)| c).collect::<Vec<_>>(),
         true,
     )?;
 
     let mut output = Vec::new();
-    for (glsl_file, compile_result) in compile_results {
-        let dx12_src = if let Some(src) = try_load_override_src(glsl_file, ".hlsl")? {
+    for (glsl_file, parameters, compile_result) in compile_results {
+        // An in-memory cook (no ambient includes) never reads an override file.
+        let override_src = if parameters.allow_ambient_includes {
+            try_load_override_src(glsl_file, ".hlsl")?
+        } else {
+            None
+        };
+        let dx12_src = if let Some(src) = override_src {
             src
         } else {
             let spirv_cross_module =
