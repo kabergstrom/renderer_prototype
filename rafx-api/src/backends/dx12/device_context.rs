@@ -181,6 +181,21 @@ fn create_device(
             // Note: SetMuteDebugOutput(true) would prevent messages from
             // reaching OutputDebugString, but it also prevents them from being
             // stored in the queue. Leave it unmuted so poll_debug_messages() works.
+
+            // The layer reports a DATA_STATIC_WHILE_SET_AT_EXECUTE table whose
+            // data went writable as needing a rebind before the next draw or
+            // dispatch, even one that never dereferences it (e.g. a compute
+            // table still set while a later raster pass renders into a texture
+            // it sampled). The root signature 1.1 spec only requires the rebind
+            // before the table is next dereferenced, so the message is a false
+            // positive for that pattern.
+            let mut deny_ids = [
+                d3d12::D3D12_MESSAGE_ID_DATA_STATIC_WHILE_SET_AT_EXECUTE_DESCRIPTOR_INVALID_DATA_CHANGE,
+            ];
+            let mut filter = d3d12::D3D12_INFO_QUEUE_FILTER::default();
+            filter.DenyList.NumIDs = deny_ids.len() as u32;
+            filter.DenyList.pIDList = deny_ids.as_mut_ptr();
+            info_queue.AddStorageFilterEntries(&filter)?;
         }
 
         // Set what degree of GBV we want to use.
