@@ -915,12 +915,12 @@ impl IfdefStack {
 pub struct PreprocessorState {
     defines: FnvHashMap<String, String>,
     ifdef_stack: IfdefStack,
-    reject_includes: bool,
+    includes: crate::Includes,
 }
 
 impl PreprocessorState {
-    pub(crate) fn reject_includes(&mut self) {
-        self.reject_includes = true;
+    pub(crate) fn set_includes(&mut self, includes: crate::Includes) {
+        self.includes = includes;
     }
     // For setting state directly
     pub fn add_define(
@@ -1032,12 +1032,19 @@ fn parse_shader_source_recursive(
     preprocessor_state: &mut PreprocessorState,
 ) -> Result<(), String> {
     log::trace!("parse_shader_source_recursive {:?}", file_to_process);
-    let resolved_include = super::include_impl(
+    let resolved_include = match preprocessor_state.includes.resolve(
         &file_to_process.path,
         file_to_process.include_type,
         &file_to_process.requested_from,
         file_to_process.include_depth,
-    )?;
+    ) {
+        Ok(resolved) => resolved,
+        // The parser follows `#include` lines in inactive branches too. An
+        // in-memory caller gives only the files it found; shaderc, which
+        // ran first, already failed on any active include missing.
+        Err(_) if !preprocessor_state.includes.is_ambient() => return Ok(()),
+        Err(error) => return Err(error),
+    };
 
     if included_files.contains(&resolved_include.resolved_path) {
         return Ok(());
@@ -1083,9 +1090,6 @@ pub(crate) fn parse_shader_source_text(
         {
             match consume_directive_result.directive_name.as_str() {
                 "include" => {
-                    if preprocessor_state.reject_includes {
-                        return Err("unexpanded include: in-memory sources must be dependency-tracked".into());
-                    }
                     let directive = try_parse_include(&code, position);
                     // assert!(directive.is_some());
                     // println!("include: {:?}", directive);
@@ -1233,7 +1237,7 @@ fn inline_includes_in_source_recursive(
     output_code: &mut String,
 ) -> Result<(), String> {
     log::trace!("inline_includes_in_source_recursive {:?}", file_to_process);
-    let resolved_include = super::include_impl(
+    let resolved_include = crate::Includes::default().resolve(
         &file_to_process.path,
         file_to_process.include_type,
         &file_to_process.requested_from,

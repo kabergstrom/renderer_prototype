@@ -16,8 +16,8 @@ use crate::parse_declarations::ParseDeclarationsResult;
 use crate::parse_source::PreprocessorState;
 use crate::reflect::{map_shader_stage_flags, ShaderProcessorReflectionData};
 use fnv::{FnvHashMap, FnvHashSet};
-use include::include_impl;
 use include::IncludeType;
+pub use include::{virtual_include_candidates, Includes};
 use rafx_api::{
     RafxHashedShaderPackage, RafxPipelinePackage, RafxPipelineVariant, RafxShaderPackage,
     RafxShaderPackageDx12, RafxShaderPackageGles2, RafxShaderPackageGles3, RafxShaderPackageMetal,
@@ -94,6 +94,10 @@ pub struct ShaderProcessorArgs {
     pub gles3_generated_src_path: Option<PathBuf>,
     #[structopt(name = "cooked-shaders-path", long, parse(from_os_str))]
     pub cooked_shaders_path: Option<PathBuf>,
+    /// Directories searched, in order, for an `#include` not found
+    /// relative to the including file (repeatable).
+    #[structopt(name = "include-path", long, parse(from_os_str))]
+    pub include_paths: Vec<PathBuf>,
 
     #[structopt(name = "shader-kind", long)]
     pub shader_kind: Option<String>,
@@ -131,14 +135,17 @@ pub struct ShaderStageSource<'a> {
 
 /// Compile and package a pipeline for Vulkan (SPIR-V) and DX12 (HLSL source,
 /// which the device compiles) entirely from dependency-tracked in-memory
-/// stage sources.
+/// stage sources. `includes` holds every file an `#include` may name, by
+/// virtual path, resolved by [`virtual_include_candidates`].
 pub fn compile_pipeline(
     stages: &[ShaderStageSource<'_>],
+    includes: &std::collections::BTreeMap<String, String>,
     optimize: bool,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     if stages.is_empty() {
         Err("a pipeline must contain at least one shader stage")?;
     }
+    let includes = Includes::Memory(std::sync::Arc::new(includes.clone()));
     let args = ShaderProcessorArgs {
         glsl_file: None,
         spv_file: None,
@@ -157,6 +164,7 @@ pub fn compile_pipeline(
         gles2_generated_src_path: None,
         gles3_generated_src_path: None,
         cooked_shaders_path: None,
+        include_paths: Vec::new(),
         shader_kind: None,
         trace: false,
         optimize_shaders: optimize,
@@ -180,40 +188,61 @@ pub fn compile_pipeline(
                 shader_kind,
                 code: stage.source.to_owned(),
                 entry_point_name: "main".to_owned(),
-                allow_ambient_includes: false,
+                includes: includes.clone(),
                 compiler: shaderc::Compiler::new()
                     .ok_or("failed to initialize the shader compiler")?,
             },
         ));
     }
-    let compile_results = parameters
-        .iter()
-        .map(|(_, parameters)| {
-            compile_glsl(parameters, &[(PREPROCESSOR_DEF_PLATFORM_RUST_CODEGEN, "1")])
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     let parameter_refs = parameters
         .iter()
         .map(|(path, parameters)| (path.as_path(), parameters))
         .collect::<Vec<_>>();
-    let vk_output = cross_compile_to_vulkan(&parameter_refs, &args, &[])?;
-    let dx12_output = cross_compile_to_dx12(&parameter_refs, &[])?;
     let paths = parameters
         .iter()
         .map(|(path, _)| path.as_path())
         .collect::<Vec<_>>();
-    let packages = package_shader_stages(
-        &compile_results,
-        &paths,
-        &args,
-        &vk_output,
-        Some(&dx12_output),
-        None,
-        None,
-        None,
-    )?;
-    let vertex_channels = codegen::compute_vertex_channels_from_results(&compile_results);
-    let pipeline = RafxPipelinePackage::new(packages).with_vertex_channels(vertex_channels);
+    // As the offline cook: an `@[vertex_formats([..])]` annotation makes the
+    // first format the primary package and each other one a variant.
+    let formats = pre_scan_vertex_formats(
+        &stages.iter().map(|stage| stage.source.to_owned()).collect::<Vec<_>>(),
+    );
+    let defines: Vec<String> = formats
+        .iter()
+        .map(|format| format!("VERTEX_FORMAT_{format}"))
+        .collect();
+    let mut cooked: Vec<(Vec<RafxHashedShaderPackage>, Option<u32>)> = Vec::new();
+    for define in defines.iter().map(Some).chain(defines.is_empty().then_some(None)) {
+        let extra: Vec<(&str, &str)> = define.map(|d| (d.as_str(), "1")).into_iter().collect();
+        let mut codegen_defines = vec![(PREPROCESSOR_DEF_PLATFORM_RUST_CODEGEN, "1")];
+        codegen_defines.extend_from_slice(&extra);
+        let compile_results = parameters
+            .iter()
+            .map(|(_, parameters)| compile_glsl(parameters, &codegen_defines))
+            .collect::<Result<Vec<_>, _>>()?;
+        let vk_output = cross_compile_to_vulkan(&parameter_refs, &args, &extra)?;
+        let dx12_output = cross_compile_to_dx12(&parameter_refs, &extra)?;
+        let packages = package_shader_stages(
+            &compile_results,
+            &paths,
+            &args,
+            &vk_output,
+            Some(&dx12_output),
+            None,
+            None,
+            None,
+        )?;
+        cooked.push((packages, codegen::compute_vertex_channels_from_results(&compile_results)));
+    }
+    let mut cooked = cooked.into_iter();
+    let (packages, vertex_channels) = cooked.next().expect("at least the primary package");
+    let mut pipeline = RafxPipelinePackage::new(packages).with_vertex_channels(vertex_channels);
+    pipeline.variants = cooked
+        .map(|(shaders, channels)| RafxPipelineVariant {
+            shaders,
+            vertex_channels: channels.unwrap_or(0),
+        })
+        .collect();
     Ok(bincode::serialize(&pipeline)?)
 }
 
@@ -288,6 +317,7 @@ mod in_memory_tests {
                 virtual_path: "asset/basic.comp",
                 source: "#version 450\nlayout(local_size_x=1, local_size_y=1, local_size_z=1) in;\nvoid main() {}\n",
             }],
+            &Default::default(),
             false,
         )
         .unwrap();
@@ -295,6 +325,38 @@ mod in_memory_tests {
         assert_eq!(package.shaders.len(), 1);
         assert!(package.shaders[0].shader_package().vk.is_some());
         assert!(package.shaders[0].shader_package().dx12.is_some());
+    }
+
+    /// Includes resolve from the caller's files only (the including file's
+    /// directory, then the root), and a `vertex_formats` annotation cooks
+    /// the first format as the primary package and the others as variants.
+    #[test]
+    fn graphics_stages_include_from_memory_and_cook_vertex_format_variants() {
+        let vert = "#version 450\n#include \"formats.glsl\"\n#include \"local.glsl\"\n\
+            // @[vertex_formats([\"P\", \"PU\"])]\n\
+            layout(set = 0, binding = 0) buffer readonly VertexBuffer { Vertex vertices[]; } vertex_buffer;\n\
+            void main() { gl_Position = vec4(vertex_buffer.vertices[gl_VertexIndex].pos * SCALE, 1.0); }\n";
+        let frag = "#version 450\nlayout(location = 0) out vec4 out_color;\nvoid main() { out_color = vec4(1.0); }\n";
+        let formats = "#ifdef VERTEX_FORMAT_P\nstruct Vertex { vec3 pos; };\n#endif\n\
+            #ifdef VERTEX_FORMAT_PU\nstruct Vertex { vec3 pos; vec2 uv; };\n#endif\n";
+        let includes = std::collections::BTreeMap::from([
+            ("formats.glsl".to_owned(), formats.to_owned()),
+            ("fx/local.glsl".to_owned(), "#define SCALE 2.0\n".to_owned()),
+        ]);
+        let stages = [
+            ShaderStageSource { virtual_path: "fx/a.vert", source: vert },
+            ShaderStageSource { virtual_path: "fx/a.frag", source: frag },
+        ];
+        let bytes = compile_pipeline(&stages, &includes, false).unwrap();
+        let package: RafxPipelinePackage = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(package.shaders.len(), 2);
+        assert_eq!(package.variants.len(), 1);
+        assert_ne!(package.vertex_channels, Some(package.variants[0].vertex_channels));
+
+        let mut missing = includes.clone();
+        missing.remove("fx/local.glsl");
+        let error = compile_pipeline(&stages, &missing, false).unwrap_err().to_string();
+        assert!(error.contains("local.glsl"), "{error}");
     }
 
     /// GLSL `buffer readonly` decorates the block's members NonWritable, not
@@ -323,7 +385,7 @@ mod in_memory_tests {
             shader_kind: shaderc::ShaderKind::Compute,
             code: source.to_owned(),
             entry_point_name: "main".to_owned(),
-            allow_ambient_includes: false,
+            includes: Includes::default(),
             compiler: shaderc::Compiler::new().unwrap(),
         };
         let output = cross_compile_to_dx12(&[(path.as_path(), &parameters)], &[]).unwrap();
@@ -349,20 +411,21 @@ mod in_memory_tests {
     }
 
     #[test]
-    fn rejects_inactive_includes_before_reflection_parser_reads_files() {
+    fn inactive_includes_never_reach_the_filesystem() {
+        // The caller gave no files: the inactive include is skipped, not
+        // looked up on disk.
         for optimize in [false, true] {
-            let error = compile_pipeline(
+            compile_pipeline(
                 &[ShaderStageSource {
                     virtual_path: "asset/inactive.comp",
                     source: "#version 450\n#if 0\n#include \"ambient.glsl\"\n#endif\nlayout(local_size_x=1) in;\nvoid main() {}\n",
-                }], optimize,
-            ).unwrap_err();
-            assert!(error.to_string().contains("unexpanded include"));
+                }], &Default::default(), optimize,
+            ).unwrap();
         }
     }
 
     #[test]
-    fn rejects_unexpanded_includes() {
+    fn rejects_includes_the_caller_did_not_read() {
         for directive in [
             "#include",
             "# include",
@@ -376,11 +439,12 @@ mod in_memory_tests {
                         virtual_path: "asset/basic.comp",
                         source: &source,
                     }],
+                    &Default::default(),
                     optimize,
                 )
                 .unwrap_err();
                 assert!(
-                    error.to_string().contains("unexpanded include"),
+                    error.to_string().contains("not among the files the caller read"),
                     "{directive}: {error}"
                 );
             }
@@ -500,7 +564,7 @@ fn process_directory(
                 shader_kind,
                 code: code.clone(),
                 entry_point_name: "main".to_string(),
-                allow_ambient_includes: true,
+                includes: Includes::Ambient(args.include_paths.clone().into()),
                 compiler,
             };
 
@@ -700,7 +764,7 @@ struct CompileParameters {
     code: String,
     entry_point_name: String,
     compiler: Compiler,
-    allow_ambient_includes: bool,
+    includes: Includes,
 }
 
 impl CompileParameters {
@@ -708,15 +772,7 @@ impl CompileParameters {
         &self,
         options: &mut shaderc::CompileOptions<'_>,
     ) {
-        if self.allow_ambient_includes {
-            options.set_include_callback(include::shaderc_include_callback);
-        } else {
-            options.set_include_callback(|name, _, _, _| {
-                Err(format!(
-                    "unexpanded include {name}: in-memory sources must be dependency-tracked"
-                ))
-            });
-        }
+        options.set_include_callback(self.includes.shaderc_callback());
     }
 }
 
@@ -972,9 +1028,7 @@ fn compile_glsl(
         log::trace!("{:?}: parse glsl", parameters.glsl_file);
 
         let mut preprocessor_state = PreprocessorState::default();
-        if !parameters.allow_ambient_includes {
-            preprocessor_state.reject_includes();
-        }
+        preprocessor_state.set_includes(parameters.includes.clone());
         for (name, value) in defines {
             preprocessor_state.add_define(name.to_string(), value.to_string());
         }
@@ -1097,7 +1151,7 @@ fn cross_compile_to_dx12(
     let mut output = Vec::new();
     for (glsl_file, parameters, compile_result) in compile_results {
         // An in-memory cook (no ambient includes) never reads an override file.
-        let override_src = if parameters.allow_ambient_includes {
+        let override_src = if parameters.includes.is_ambient() {
             try_load_override_src(glsl_file, ".hlsl")?
         } else {
             None
