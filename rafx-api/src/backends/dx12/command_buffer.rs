@@ -867,11 +867,13 @@ impl RafxCommandBufferDx12 {
                     //TODO: Partial barriers
 
                     let (state_before, state_after) = match buffer_barrier.queue_transition {
-                        RafxBarrierQueueTransition::ReleaseTo(_) => (
+                        RafxBarrierQueueTransition::ReleaseTo(_)
+                        | RafxBarrierQueueTransition::ReleaseToExternal => (
                             buffer_barrier.src_state.into(),
                             d3d12::D3D12_RESOURCE_STATE_COMMON,
                         ),
-                        RafxBarrierQueueTransition::AcquireFrom(_) => (
+                        RafxBarrierQueueTransition::AcquireFrom(_)
+                        | RafxBarrierQueueTransition::AcquireFromExternal => (
                             d3d12::D3D12_RESOURCE_STATE_COMMON,
                             buffer_barrier.dst_state.into(),
                         ),
@@ -931,11 +933,13 @@ impl RafxCommandBufferDx12 {
                 //TODO: Partial barriers
 
                 let (state_before, state_after) = match texture_barrier.queue_transition {
-                    RafxBarrierQueueTransition::ReleaseTo(_) => (
+                    RafxBarrierQueueTransition::ReleaseTo(_)
+                    | RafxBarrierQueueTransition::ReleaseToExternal => (
                         texture_barrier.src_state.into(),
                         d3d12::D3D12_RESOURCE_STATE_COMMON,
                     ),
-                    RafxBarrierQueueTransition::AcquireFrom(_) => (
+                    RafxBarrierQueueTransition::AcquireFrom(_)
+                    | RafxBarrierQueueTransition::AcquireFromExternal => (
                         d3d12::D3D12_RESOURCE_STATE_COMMON,
                         texture_barrier.dst_state.into(),
                     ),

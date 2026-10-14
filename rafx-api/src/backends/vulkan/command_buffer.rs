@@ -706,6 +706,14 @@ impl RafxCommandBufferVulkan {
                         );
                     vk_buffer_barrier.dst_queue_family_index = self.queue_family_index;
                 }
+                RafxBarrierQueueTransition::ReleaseToExternal => {
+                    vk_buffer_barrier.src_queue_family_index = self.queue_family_index;
+                    vk_buffer_barrier.dst_queue_family_index = vk::QUEUE_FAMILY_EXTERNAL;
+                }
+                RafxBarrierQueueTransition::AcquireFromExternal => {
+                    vk_buffer_barrier.src_queue_family_index = vk::QUEUE_FAMILY_EXTERNAL;
+                    vk_buffer_barrier.dst_queue_family_index = self.queue_family_index;
+                }
                 RafxBarrierQueueTransition::None => {
                     vk_buffer_barrier.src_queue_family_index = vk::QUEUE_FAMILY_IGNORED;
                     vk_buffer_barrier.dst_queue_family_index = vk::QUEUE_FAMILY_IGNORED;
@@ -765,6 +773,14 @@ impl RafxCommandBufferVulkan {
                         super::util::queue_type_to_family_index(device_context, *src_queue_type);
                     vk_image_barrier.dst_queue_family_index = self_queue_family_index;
                 }
+                RafxBarrierQueueTransition::ReleaseToExternal => {
+                    vk_image_barrier.src_queue_family_index = self_queue_family_index;
+                    vk_image_barrier.dst_queue_family_index = vk::QUEUE_FAMILY_EXTERNAL;
+                }
+                RafxBarrierQueueTransition::AcquireFromExternal => {
+                    vk_image_barrier.src_queue_family_index = vk::QUEUE_FAMILY_EXTERNAL;
+                    vk_image_barrier.dst_queue_family_index = self_queue_family_index;
+                }
                 RafxBarrierQueueTransition::None => {
                     vk_image_barrier.src_queue_family_index = vk::QUEUE_FAMILY_IGNORED;
                     vk_image_barrier.dst_queue_family_index = vk::QUEUE_FAMILY_IGNORED;
@@ -779,12 +795,18 @@ impl RafxCommandBufferVulkan {
                 image_subresource_range(texture, barrier.array_slice, barrier.mip_slice);
 
             // First transition is always from undefined. Doing it here can save downstream code
-            // from having to implement a "first time" path and a "normal" path
-            let old_layout = if barrier
+            // from having to implement a "first time" path and a "normal" path. Except an
+            // external acquire: the releasing side defined the layout.
+            let initial_undefined = barrier
                 .texture
                 .vk_texture()
                 .unwrap()
-                .take_initial_undefined_layout()
+                .take_initial_undefined_layout();
+            let old_layout = if initial_undefined
+                && !matches!(
+                    barrier.queue_transition,
+                    RafxBarrierQueueTransition::AcquireFromExternal
+                )
             {
                 vk::ImageLayout::UNDEFINED
             } else {

@@ -724,6 +724,17 @@ pub enum RafxBarrierQueueTransition {
     /// A barrier for the "receiving" queue. Contains the "sending" queue. (the "receiving" queue is
     /// inferred by the queue on which the barrier is submitted)
     AcquireFrom(RafxQueueType),
+
+    /// Hands the resource to another device or process sharing its memory (Vulkan
+    /// `VK_QUEUE_FAMILY_EXTERNAL`; DX12: to `COMMON`). `dst_state` is the state the acquiring
+    /// side names as its `src_state`.
+    ReleaseToExternal,
+
+    /// Takes the resource from another device or process sharing its memory (Vulkan
+    /// `VK_QUEUE_FAMILY_EXTERNAL`; DX12: from `COMMON`). `src_state` is the state the releasing
+    /// side left it in, also on a texture's first barrier (its contents come from the other
+    /// side), which therefore never starts from the initial `UNDEFINED` layout.
+    AcquireFromExternal,
 }
 
 impl Default for RafxBarrierQueueTransition {
