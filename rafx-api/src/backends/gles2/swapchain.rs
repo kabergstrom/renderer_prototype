@@ -39,6 +39,11 @@ impl RafxSwapchainGles2 {
         RafxSwapchainColorSpace::Srgb
     }
 
+    /// Texture-to-buffer copies are not implemented on this backend.
+    pub fn copy_src_supported(&self) -> bool {
+        false
+    }
+
     pub fn surface_context(&self) -> &Arc<GlContext> {
         &self.surface_context
     }

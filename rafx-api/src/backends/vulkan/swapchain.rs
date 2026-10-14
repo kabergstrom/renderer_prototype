@@ -65,7 +65,6 @@ struct SwapchainInfo {
     extents: vk::Extent2D,
     #[allow(unused)]
     image_count: usize,
-    #[allow(unused)]
     image_usage_flags: vk::ImageUsageFlags,
 }
 
@@ -129,6 +128,14 @@ impl RafxSwapchainVulkan {
 
     pub fn color_space(&self) -> RafxSwapchainColorSpace {
         self.swapchain.swapchain_info.color_space
+    }
+
+    /// The images were created with TRANSFER_SRC (the surface supports it).
+    pub fn copy_src_supported(&self) -> bool {
+        self.swapchain
+            .swapchain_info
+            .image_usage_flags
+            .contains(vk::ImageUsageFlags::TRANSFER_SRC)
     }
 
     pub fn new(
@@ -379,7 +386,11 @@ impl RafxSwapchainVulkanInstance {
                 .graphics_queue_family_index,
         )?;
 
-        let swapchain_image_usage_flags = vk::ImageUsageFlags::COLOR_ATTACHMENT;
+        // TRANSFER_SRC where the surface allows it: copying a presented image
+        // (a screenshot) needs it; copy_src_supported() reports it.
+        let swapchain_image_usage_flags = vk::ImageUsageFlags::COLOR_ATTACHMENT
+            | (surface_capabilities.supported_usage_flags & vk::ImageUsageFlags::TRANSFER_SRC);
+        log::info!("Swapchain image usage: {:?}", swapchain_image_usage_flags);
         let create_swapchain_result = Self::create_swapchain(
             device_context,
             surface,

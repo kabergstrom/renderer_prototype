@@ -133,6 +133,34 @@ impl RafxSwapchain {
         }
     }
 
+    /// Whether the swapchain images can be the source of a copy (a texture-to-buffer copy of the
+    /// presented image). Vulkan: the surface supports TRANSFER_SRC usage.
+    pub fn copy_src_supported(&self) -> bool {
+        match self {
+            #[cfg(feature = "rafx-dx12")]
+            RafxSwapchain::Dx12(inner) => inner.copy_src_supported(),
+            #[cfg(feature = "rafx-vulkan")]
+            RafxSwapchain::Vk(inner) => inner.copy_src_supported(),
+            #[cfg(feature = "rafx-metal")]
+            RafxSwapchain::Metal(inner) => inner.copy_src_supported(),
+            #[cfg(feature = "rafx-gles2")]
+            RafxSwapchain::Gles2(inner) => inner.copy_src_supported(),
+            #[cfg(feature = "rafx-gles3")]
+            RafxSwapchain::Gles3(inner) => inner.copy_src_supported(),
+            #[cfg(any(
+                feature = "rafx-empty",
+                not(any(
+                    feature = "rafx-dx12",
+                    feature = "rafx-metal",
+                    feature = "rafx-vulkan",
+                    feature = "rafx-gles2",
+                    feature = "rafx-gles3"
+                ))
+            ))]
+            RafxSwapchain::Empty(inner) => inner.copy_src_supported(),
+        }
+    }
+
     /// Return the metadata used to create the swapchain
     pub fn swapchain_def(&self) -> &RafxSwapchainDef {
         match self {

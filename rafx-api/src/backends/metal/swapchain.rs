@@ -65,6 +65,12 @@ impl RafxSwapchainMetal {
         self.color_space
     }
 
+    /// A framebuffer-only layer (the CAMetalLayer default) gives drawables
+    /// that cannot be blit sources.
+    pub fn copy_src_supported(&self) -> bool {
+        !self.layer.framebuffer_only()
+    }
+
     pub fn metal_layer(&self) -> &metal_rs::MetalLayerRef {
         self.layer.as_ref()
     }

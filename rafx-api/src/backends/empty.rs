@@ -641,6 +641,9 @@ impl RafxSwapchainEmpty {
     pub fn color_space(&self) -> RafxSwapchainColorSpace {
         unimplemented!()
     }
+    pub fn copy_src_supported(&self) -> bool {
+        unimplemented!()
+    }
     pub fn acquire_next_image_fence(
         &mut self,
         fence: &RafxFenceEmpty,

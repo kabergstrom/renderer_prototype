@@ -354,6 +354,7 @@ pub struct RafxSwapchainHelper {
     shared_state: Option<Arc<RafxSwapchainHelperSharedState>>,
     format: RafxFormat,
     color_space: RafxSwapchainColorSpace,
+    copy_src_supported: bool,
     swapchain_def: RafxSwapchainDef,
 
     // False initially, set to true when we produce the first presentable frame to indicate that
@@ -369,6 +370,7 @@ impl RafxSwapchainHelper {
     ) -> RafxResult<Self> {
         let format = swapchain.format();
         let color_space = swapchain.color_space();
+        let copy_src_supported = swapchain.copy_src_supported();
         let swapchain_def = swapchain.swapchain_def().clone();
 
         let shared_state = Arc::new(RafxSwapchainHelperSharedState::new(
@@ -386,6 +388,7 @@ impl RafxSwapchainHelper {
             shared_state: Some(shared_state),
             format,
             color_space,
+            copy_src_supported,
             swapchain_def,
             expect_result_from_previous_frame: false,
         })
@@ -443,6 +446,11 @@ impl RafxSwapchainHelper {
 
     pub fn color_space(&self) -> RafxSwapchainColorSpace {
         self.color_space
+    }
+
+    /// See [`RafxSwapchain::copy_src_supported`].
+    pub fn copy_src_supported(&self) -> bool {
+        self.copy_src_supported
     }
 
     pub fn rotating_frame_count(&self) -> usize {
@@ -683,6 +691,7 @@ impl RafxSwapchainHelper {
             }
 
             self.format = swapchain.format();
+            self.copy_src_supported = swapchain.copy_src_supported();
             self.swapchain_def = swapchain_def;
         }
 

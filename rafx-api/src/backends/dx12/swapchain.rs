@@ -47,6 +47,11 @@ impl RafxSwapchainDx12 {
         self.color_space
     }
 
+    /// DXGI back buffers can always be copied from.
+    pub fn copy_src_supported(&self) -> bool {
+        true
+    }
+
     pub fn dx12_swapchain(&self) -> &dxgi::IDXGISwapChain3 {
         &self.swapchain
     }
