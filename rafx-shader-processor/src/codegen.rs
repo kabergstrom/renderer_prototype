@@ -6,6 +6,7 @@ use crate::{
     CompileResult,
 };
 use fnv::FnvHashMap;
+use std::collections::BTreeMap;
 
 // Structs can be used in one of these three ways. The usage will determine the memory layout
 #[derive(Copy, Clone, Debug)]
@@ -73,9 +74,11 @@ fn compute_channels_from_fields(fields: &[ParseFieldResult]) -> Result<u32, Stri
 ///   layout(...) buffer readonly VertexBuffer { Vertex vertices[]; } vertex_buffer;
 /// The binding's inline fields contain a single array field whose type_name
 /// is the actual Vertex struct. We look up that struct's fields for channels.
-fn compute_vertex_channels(compile_results: &[CompileResult]) -> Result<Option<u32>, String> {
-    for cr in compile_results {
-        for binding in &cr.parsed_declarations.bindings {
+fn compute_vertex_channels(
+    declarations: &[&ParseDeclarationsResult]
+) -> Result<Option<u32>, String> {
+    for cr in declarations {
+        for binding in &cr.bindings {
             if binding.parsed.instance_name != "vertex_buffer" {
                 continue;
             }
@@ -89,7 +92,6 @@ fn compute_vertex_channels(compile_results: &[CompileResult]) -> Result<Option<u
                 for field in inline_fields.iter() {
                     // Look up the struct referenced by this field's type
                     if let Some(s) = cr
-                        .parsed_declarations
                         .structs
                         .iter()
                         .find(|s| s.parsed.type_name == field.type_name)
@@ -103,7 +105,6 @@ fn compute_vertex_channels(compile_results: &[CompileResult]) -> Result<Option<u
 
             // No inline fields — try the binding's type_name as a struct
             if let Some(s) = cr
-                .parsed_declarations
                 .structs
                 .iter()
                 .find(|s| s.parsed.type_name == binding.parsed.type_name)
@@ -119,7 +120,8 @@ fn compute_vertex_channels(compile_results: &[CompileResult]) -> Result<Option<u
 pub(crate) fn compute_vertex_channels_from_results(
     compile_results: &[CompileResult]
 ) -> Option<u32> {
-    match compute_vertex_channels(compile_results) {
+    let declarations: Vec<_> = compile_results.iter().map(|c| &c.parsed_declarations).collect();
+    match compute_vertex_channels(&declarations) {
         Ok(channels) => channels,
         Err(e) => {
             log::error!("Failed to compute vertex channels: {}", e);
@@ -131,22 +133,19 @@ pub(crate) fn compute_vertex_channels_from_results(
 /// Returns (generated_rust_code, vertex_channels_bitmask).
 pub(crate) fn generate_rust_code(
     pipeline_name: String,
-    compile_results: &[CompileResult],
+    compile_results: &[&ParseDeclarationsResult],
 ) -> Result<(String, Option<u32>), String> {
-    // builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
-    let mut all_structs = FnvHashMap::default();
-    for s in compile_results
-        .iter()
-        .flat_map(|c| &c.parsed_declarations.structs)
+    // Ordered maps: the output must not depend on hash order (the same
+    // sources always generate the same bytes).
+    let mut all_structs = BTreeMap::default();
+    for s in compile_results.iter().flat_map(|c| &c.structs)
     {
         let _existing_struct = all_structs
             .entry(s.parsed.type_name.clone())
             .or_insert_with(|| s.clone());
     }
-    let mut all_bindings = FnvHashMap::default();
-    for b in compile_results
-        .iter()
-        .flat_map(|c| &c.parsed_declarations.bindings)
+    let mut all_bindings = BTreeMap::default();
+    for b in compile_results.iter().flat_map(|c| &c.bindings)
     {
         let existing_binding = all_bindings
             .entry(b.parsed.instance_name.clone())
@@ -164,7 +163,7 @@ pub(crate) fn generate_rust_code(
 
     let first_group_size = compile_results
         .iter()
-        .filter_map(|c| c.parsed_declarations.group_size.clone())
+        .filter_map(|c| c.group_size.clone())
         .next();
     let builtin_types = shader_types::create_builtin_type_lookup();
     let declarations = ParseDeclarationsResult {
@@ -177,7 +176,7 @@ pub(crate) fn generate_rust_code(
 
     for compile_result in compile_results {
         // Any struct that's explicitly exported will produce all layouts
-        for s in &compile_result.parsed_declarations.structs {
+        for s in &compile_result.structs {
             if s.annotations.export.is_some() {
                 recursive_modify_user_type(&mut user_types, &s.parsed.type_name, &|udt| {
                     let already_marked = udt.export_uniform_layout
@@ -195,7 +194,7 @@ pub(crate) fn generate_rust_code(
         // Bindings can either be std140 (uniform) or std430 (push constant/buffer). Depending on the
         // binding, enable export for just the type that we need
         //
-        for b in &compile_result.parsed_declarations.bindings {
+        for b in &compile_result.bindings {
             if b.annotations.export.is_some() {
                 match determine_binding_type(b)? {
                     StructBindingType::PushConstant => {
@@ -253,7 +252,9 @@ fn rust_structs(
     builtin_types: &FnvHashMap<String, TypeAlignmentInfo>,
     user_types: &FnvHashMap<String, UserType>,
 ) -> Result<(), String> {
-    for (type_name, user_type) in user_types {
+    let mut sorted: Vec<_> = user_types.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(b.0));
+    for (type_name, user_type) in sorted {
         if user_type.export_uniform_layout {
             let s = generate_struct(
                 &builtin_types,
@@ -349,7 +350,18 @@ fn rust_binding_constants(
     rust_code: &mut Vec<String>,
     parsed_declarations: &ParseDeclarationsResult,
 ) {
-    for binding in &parsed_declarations.bindings {
+    // By (set, binding), then name: source order is not recoverable after
+    // the per-stage merge, and must not depend on which stage came first.
+    let mut bindings: Vec<_> = parsed_declarations.bindings.iter().collect();
+    bindings.sort_by(|a, b| {
+        let key = |x: &&ParsedBindingWithAnnotations| {
+            (x.parsed.layout_parts.set, x.parsed.layout_parts.binding)
+        };
+        key(a)
+            .cmp(&key(b))
+            .then_with(|| a.parsed.instance_name.cmp(&b.parsed.instance_name))
+    });
+    for binding in bindings {
         if let (Some(set_index), Some(binding_index)) = (
             binding.parsed.layout_parts.set,
             binding.parsed.layout_parts.binding,

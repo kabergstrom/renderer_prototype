@@ -1,6 +1,5 @@
 use spirv_cross2::compile::CompiledArtifact;
 use spirv_cross2::targets::{Hlsl, Msl};
-use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
@@ -133,18 +132,72 @@ pub struct ShaderStageSource<'a> {
     pub source: &'a str,
 }
 
-/// Compile and package a pipeline for Vulkan (SPIR-V) and DX12 (HLSL source,
-/// which the device compiles) entirely from dependency-tracked in-memory
-/// stage sources. `includes` holds every file an `#include` may name, by
-/// virtual path, resolved by [`virtual_include_candidates`].
+/// The backends a [`compile_pipeline`] package carries, and whether SPIR-V
+/// is optimized.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CookOptions {
+    pub vulkan: bool,
+    pub dx12: bool,
+    pub metal: bool,
+    pub optimize: bool,
+}
+
+/// The Rust bindings of a pipeline: the Std140/Std430 layouts of its
+/// exported structs and uniforms and a `crate::ShaderResourceBindingKey`
+/// per binding, from the stages' declarations alone (parsed, not compiled:
+/// compile errors are [`compile_pipeline`]'s). Deterministic: the same
+/// sources give the same text, whatever order equal declarations arrive in.
+pub fn rust_bindings(
+    stages: &[ShaderStageSource<'_>],
+    includes: &std::collections::BTreeMap<String, String>,
+) -> Result<String, Box<dyn Error>> {
+    if stages.is_empty() {
+        Err("a pipeline must contain at least one shader stage")?;
+    }
+    let includes = Includes::Memory(std::sync::Arc::new(includes.clone()));
+    let formats = pre_scan_vertex_formats(
+        &stages.iter().map(|stage| stage.source.to_owned()).collect::<Vec<_>>(),
+    );
+    let primary = formats.first().map(|format| format!("VERTEX_FORMAT_{format}"));
+    let mut declarations = Vec::with_capacity(stages.len());
+    for stage in stages {
+        let path = PathBuf::from(stage.virtual_path);
+        let mut state = PreprocessorState::default();
+        state.set_includes(includes.clone());
+        state.add_define(PREPROCESSOR_DEF_PLATFORM_RUST_CODEGEN.to_string(), "1".to_string());
+        if let Some(primary) = &primary {
+            state.add_define(primary.clone(), "1".to_string());
+        }
+        let parsed = parse_source::parse_glsl_src(&path, stage.source, &mut state)
+            .map_err(|error| format!("{}: {error}", stage.virtual_path))?;
+        declarations.push(
+            parse_declarations::parse_declarations(&parsed.declarations)
+                .map_err(|error| format!("{}: {error}", stage.virtual_path))?,
+        );
+    }
+    let name = stages[0].virtual_path.to_owned();
+    let refs: Vec<_> = declarations.iter().collect();
+    let (code, _) = codegen::generate_rust_code(name, &refs)?;
+    Ok(code)
+}
+
+/// Compile and package a pipeline for the backends `options` names
+/// (Vulkan: SPIR-V; DX12, Metal: source the device compiles) entirely from
+/// dependency-tracked in-memory stage sources. `includes` holds every file
+/// an `#include` may name, by virtual path, resolved by
+/// [`virtual_include_candidates`].
 pub fn compile_pipeline(
     stages: &[ShaderStageSource<'_>],
     includes: &std::collections::BTreeMap<String, String>,
-    optimize: bool,
+    options: &CookOptions,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     if stages.is_empty() {
         Err("a pipeline must contain at least one shader stage")?;
     }
+    if !(options.vulkan || options.dx12 || options.metal) {
+        Err("a pipeline package needs at least one backend")?;
+    }
+    let optimize = options.optimize;
     let includes = Includes::Memory(std::sync::Arc::new(includes.clone()));
     let args = ShaderProcessorArgs {
         glsl_file: None,
@@ -168,9 +221,9 @@ pub fn compile_pipeline(
         shader_kind: None,
         trace: false,
         optimize_shaders: optimize,
-        package_vk: true,
-        package_dx12: true,
-        package_metal: false,
+        package_vk: options.vulkan,
+        package_dx12: options.dx12,
+        package_metal: options.metal,
         package_gles2: false,
         package_gles3: false,
         package_all: false,
@@ -220,15 +273,22 @@ pub fn compile_pipeline(
             .iter()
             .map(|(_, parameters)| compile_glsl(parameters, &codegen_defines))
             .collect::<Result<Vec<_>, _>>()?;
-        let vk_output = cross_compile_to_vulkan(&parameter_refs, &args, &extra)?;
-        let dx12_output = cross_compile_to_dx12(&parameter_refs, &extra)?;
+        let (vk_output, dx12_output, metal_output, _, _) = cross_compile_variant(
+            &parameter_refs,
+            &args,
+            &extra,
+            options.dx12,
+            options.metal,
+            false,
+            false,
+        )?;
         let packages = package_shader_stages(
             &compile_results,
             &paths,
             &args,
             &vk_output,
-            Some(&dx12_output),
-            None,
+            dx12_output.as_ref(),
+            metal_output.as_ref(),
             None,
             None,
         )?;
@@ -310,6 +370,72 @@ pub fn run(args: &ShaderProcessorArgs) -> Result<(), Box<dyn Error>> {
 mod in_memory_tests {
     use super::*;
 
+    fn vk_dx12(optimize: bool) -> CookOptions {
+        CookOptions {
+            vulkan: true,
+            dx12: true,
+            metal: false,
+            optimize,
+        }
+    }
+
+    /// The bindings of a pair are the same text whichever stage comes
+    /// first: structs by name, binding constants by (set, binding).
+    #[test]
+    fn rust_bindings_do_not_depend_on_stage_order() {
+        let vert = "#version 450\n\
+            struct Args { vec4 a; mat4 m; };\n\
+            // @[export]\n\
+            layout(set = 1, binding = 0) uniform ArgsBlock { Args args; } args_ubo;\n\
+            layout(set = 0, binding = 2) uniform sampler smp_b;\n\
+            void main() { gl_Position = args_ubo.args.a; }\n";
+        let frag = "#version 450\n\
+            struct Args { vec4 a; mat4 m; };\n\
+            struct Zeta { vec4 z; };\n\
+            // @[export]\n\
+            layout(set = 1, binding = 0) uniform ArgsBlock { Args args; } args_ubo;\n\
+            // @[export]\n\
+            layout(set = 2, binding = 0) uniform ZetaBlock { Zeta zeta; } zeta_ubo;\n\
+            layout(set = 0, binding = 1) uniform texture2D tex_a;\n\
+            layout(location = 0) out vec4 out_color;\n\
+            void main() { out_color = zeta_ubo.zeta.z; }\n";
+        let forward = [
+            ShaderStageSource { virtual_path: "x.vert", source: vert },
+            ShaderStageSource { virtual_path: "x.frag", source: frag },
+        ];
+        let backward = [
+            ShaderStageSource { virtual_path: "x.frag", source: frag },
+            ShaderStageSource { virtual_path: "x.vert", source: vert },
+        ];
+        let a = rust_bindings(&forward, &Default::default()).unwrap();
+        let b = rust_bindings(&backward, &Default::default()).unwrap();
+        assert_eq!(a, b);
+        let at = |needle: &str| a.find(needle).unwrap_or_else(|| panic!("{needle} in\n{a}"));
+        assert!(at("pub struct ArgsStd140") < at("pub struct ZetaStd140"), "{a}");
+        assert!(at("pub const TEX_A") < at("pub const SMP_B"), "{a}");
+        assert!(at("pub const SMP_B") < at("pub const ARGS_UBO"), "{a}");
+        assert!(at("pub const ARGS_UBO") < at("pub const ZETA_UBO"), "{a}");
+    }
+
+    /// A package carries exactly the backends its options name.
+    #[test]
+    fn packages_carry_only_the_named_backends() {
+        let stage = [ShaderStageSource {
+            virtual_path: "asset/basic.comp",
+            source: "#version 450\nlayout(local_size_x=1, local_size_y=1, local_size_z=1) in;\nvoid main() {}\n",
+        }];
+        let options = CookOptions {
+            vulkan: true,
+            ..Default::default()
+        };
+        let bytes = compile_pipeline(&stage, &Default::default(), &options).unwrap();
+        let package: RafxPipelinePackage = bincode::deserialize(&bytes).unwrap();
+        let shader = package.shaders[0].shader_package();
+        assert!(shader.vk.is_some() && shader.vk_reflection.is_some());
+        assert!(shader.dx12.is_none() && shader.dx12_reflection.is_none());
+        assert!(compile_pipeline(&stage, &Default::default(), &CookOptions::default()).is_err());
+    }
+
     #[test]
     fn compiles_a_real_compute_pipeline_without_filesystem_inputs() {
         let bytes = compile_pipeline(
@@ -318,7 +444,7 @@ mod in_memory_tests {
                 source: "#version 450\nlayout(local_size_x=1, local_size_y=1, local_size_z=1) in;\nvoid main() {}\n",
             }],
             &Default::default(),
-            false,
+            &vk_dx12(false),
         )
         .unwrap();
         let package: RafxPipelinePackage = bincode::deserialize(&bytes).unwrap();
@@ -347,7 +473,7 @@ mod in_memory_tests {
             ShaderStageSource { virtual_path: "fx/a.vert", source: vert },
             ShaderStageSource { virtual_path: "fx/a.frag", source: frag },
         ];
-        let bytes = compile_pipeline(&stages, &includes, false).unwrap();
+        let bytes = compile_pipeline(&stages, &includes, &vk_dx12(false)).unwrap();
         let package: RafxPipelinePackage = bincode::deserialize(&bytes).unwrap();
         assert_eq!(package.shaders.len(), 2);
         assert_eq!(package.variants.len(), 1);
@@ -355,7 +481,7 @@ mod in_memory_tests {
 
         let mut missing = includes.clone();
         missing.remove("fx/local.glsl");
-        let error = compile_pipeline(&stages, &missing, false).unwrap_err().to_string();
+        let error = compile_pipeline(&stages, &missing, &vk_dx12(false)).unwrap_err().to_string();
         assert!(error.contains("local.glsl"), "{error}");
     }
 
@@ -419,7 +545,7 @@ mod in_memory_tests {
                 &[ShaderStageSource {
                     virtual_path: "asset/inactive.comp",
                     source: "#version 450\n#if 0\n#include \"ambient.glsl\"\n#endif\nlayout(local_size_x=1) in;\nvoid main() {}\n",
-                }], &Default::default(), optimize,
+                }], &Default::default(), &vk_dx12(optimize),
             ).unwrap();
         }
     }
@@ -440,7 +566,7 @@ mod in_memory_tests {
                         source: &source,
                     }],
                     &Default::default(),
-                    optimize,
+                    &vk_dx12(optimize),
                 )
                 .unwrap_err();
                 assert!(
@@ -473,7 +599,7 @@ fn process_directory(
     .file_type(globwalk::FileType::FILE)
     .build()?;
 
-    let mut pipelines = HashMap::new();
+    let mut pipelines = std::collections::BTreeMap::new();
 
     for glob in glob_walker {
         //
@@ -491,7 +617,9 @@ fn process_directory(
             pipeline_files.push(glsl_file.path().to_path_buf());
         }
     }
-    for (stem, files) in pipelines {
+    for (stem, mut files) in pipelines {
+        // readdir order varies; stage order feeds the package and the merge.
+        files.sort();
         let empty_path = PathBuf::new();
         let outfile_prefix = stem
             .strip_prefix(glsl_files)?
@@ -590,9 +718,11 @@ fn process_directory(
         let glsl_file = stem.join(&*file_name);
         let (rust_code, vertex_channels) = if rs_file.is_some() {
             log::info!("{:?}: generate rust code", stem);
+            let declarations: Vec<_> =
+                compile_results.iter().map(|c| &c.parsed_declarations).collect();
             let (code, channels) = codegen::generate_rust_code(
                 stem.to_string_lossy().into(),
-                &compile_results,
+                &declarations,
             )?;
             (Some(code), channels)
         } else {
