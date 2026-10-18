@@ -478,6 +478,9 @@ mod in_memory_tests {
         assert_eq!(package.shaders.len(), 2);
         assert_eq!(package.variants.len(), 1);
         assert_ne!(package.vertex_channels, Some(package.variants[0].vertex_channels));
+        // Optimized, the Vulkan stages are compiled again with the same
+        // defines (the vertex format's `Vertex`).
+        compile_pipeline(&stages, &includes, &vk_dx12(true)).unwrap();
 
         let mut missing = includes.clone();
         missing.remove("fx/local.glsl");
@@ -1209,11 +1212,11 @@ fn cross_compile_to_vulkan(
     args: &ShaderProcessorArgs,
     extra_defines: &[(&str, &str)],
 ) -> Result<PipelineCrossCompileResult, Box<dyn Error>> {
+    let mut defines = vec![(PREPROCESSOR_DEF_PLATFORM_VULKAN, "1")];
+    defines.extend_from_slice(extra_defines);
     let mut compile_results = Vec::new();
     for (glsl_file, parameters) in glsl_files {
         log::trace!("{:?}: create vulkan", glsl_file);
-        let mut defines = vec![(PREPROCESSOR_DEF_PLATFORM_VULKAN, "1")];
-        defines.extend_from_slice(extra_defines);
         compile_results.push((glsl_file, compile_glsl(parameters, &defines)?, parameters));
     }
     let builtin_types = shader_types::create_builtin_type_lookup();
@@ -1231,6 +1234,10 @@ fn cross_compile_to_vulkan(
         let vk_spv = if args.optimize_shaders {
             let mut compile_options = shaderc::CompileOptions::new().unwrap();
             parameters.configure_includes(&mut compile_options);
+            // The same defines as the unoptimized compile (platform, vertex format).
+            for (name, value) in &defines {
+                compile_options.add_macro_definition(name, Some(value));
+            }
             compile_options.set_optimization_level(shaderc::OptimizationLevel::Performance);
             //NOTE: Could also use shaderc::OptimizationLevel::Size
 
