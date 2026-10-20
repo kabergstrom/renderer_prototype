@@ -313,10 +313,23 @@ pub enum RafxMemoryUsage {
     /// The memory is only accessed by the GPU
     GpuOnly,
 
-    /// The memory is only accessed by the CPU
+    /// Host memory the CPU writes, outside the GPU: staging buffers, and rings
+    /// the CPU writes every frame for the GPU to read (it may bind them).
+    /// - Vulkan: a host-visible type that is not device local (system RAM;
+    ///   the first such type, write-combined on current desktop drivers),
+    ///   any host-visible type on a unified-memory device without one.
+    /// - DX12: as `CpuToGpu`, a CUSTOM heap, write-combined, `MEMORY_POOL_L0`
+    ///   (system RAM on a discrete GPU).
+    /// - Metal: `StorageModeShared` with the default (cached) CPU cache mode.
+    /// - GLES2/GLES3: no GL buffer storage; the contents live in client
+    ///   memory.
     CpuOnly,
 
-    /// The memory is written by the CPU and read by the GPU
+    /// The memory is written by the CPU and read by the GPU. Vulkan prefers a
+    /// device-local host-visible type (on a discrete GPU without resizable BAR
+    /// the 256 MiB BAR window), falling back to system RAM when that type is
+    /// full; DX12 a CUSTOM write-combined `MEMORY_POOL_L0` heap; Metal
+    /// `StorageModeShared`, write-combined.
     CpuToGpu,
 
     /// The memory is written by the GPU and read by the CPU

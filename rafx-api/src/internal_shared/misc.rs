@@ -37,6 +37,9 @@ impl Into<gpu_allocator::MemoryLocation> for crate::RafxMemoryUsage {
         match self {
             RafxMemoryUsage::Unknown => MemoryLocation::Unknown,
             RafxMemoryUsage::GpuOnly => MemoryLocation::GpuOnly,
+            // Vulkan narrows the memory types to non-device-local ones first
+            // (vulkan/buffer.rs `host_memory_type_bits`); DX12 places
+            // `CpuToGpu` in system RAM already.
             RafxMemoryUsage::CpuOnly => MemoryLocation::CpuToGpu,
             RafxMemoryUsage::CpuToGpu => MemoryLocation::CpuToGpu,
             RafxMemoryUsage::GpuToCpu => MemoryLocation::GpuToCpu,

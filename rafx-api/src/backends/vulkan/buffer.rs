@@ -3,6 +3,41 @@ use crate::*;
 use ash::vk;
 use ash::vk::Handle;
 
+/// The memory types of `allowed` that are host visible but not device local
+/// (system RAM), for [`RafxMemoryUsage::CpuOnly`]. gpu-allocator's
+/// `CpuToGpu` prefers DEVICE_LOCAL | HOST_VISIBLE, which on a discrete GPU
+/// without resizable BAR is the 256 MiB BAR window: CPU stores there cross
+/// PCIe one by one, and once the window is full gpu-allocator falls back to
+/// system RAM silently, so placement depends on what else holds the
+/// window. Masking the device-local types out makes the choice explicit.
+/// `allowed` unchanged when no such type exists (a unified-memory device,
+/// where every host-visible type is device local).
+fn host_memory_type_bits(
+    device_context: &RafxDeviceContextVulkan,
+    allowed: u32,
+) -> u32 {
+    let properties = unsafe {
+        device_context
+            .instance()
+            .get_physical_device_memory_properties(device_context.physical_device())
+    };
+    let mut bits = 0;
+    for i in 0..properties.memory_type_count {
+        let flags = properties.memory_types[i as usize].property_flags;
+        if allowed & (1 << i) != 0
+            && flags.contains(vk::MemoryPropertyFlags::HOST_VISIBLE)
+            && !flags.contains(vk::MemoryPropertyFlags::DEVICE_LOCAL)
+        {
+            bits |= 1 << i;
+        }
+    }
+    if bits == 0 {
+        allowed
+    } else {
+        bits
+    }
+}
+
 #[derive(Debug)]
 pub struct RafxBufferRaw {
     pub buffer: vk::Buffer,
@@ -146,7 +181,11 @@ impl RafxBufferVulkan {
         let device = device_context.device();
 
         let buffer = unsafe { device.create_buffer(&buffer_info, None)? };
-        let requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+        let mut requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
+        if buffer_def.memory_usage == RafxMemoryUsage::CpuOnly {
+            requirements.memory_type_bits =
+                host_memory_type_bits(device_context, requirements.memory_type_bits);
+        }
 
         let allocation = device_context.allocator().lock().unwrap().allocate(
             &gpu_allocator::vulkan::AllocationCreateDesc {
