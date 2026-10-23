@@ -67,9 +67,14 @@ pub struct RafxPipelineMetal {
     pipeline_type: RafxPipelineType,
     // It's a RafxRootSignatureMetal, but stored as RafxRootSignature so we can return refs to it
     root_signature: RafxRootSignature,
-    pipeline: MetalPipelineState,
+    // Boxed, as is the render encoder info (its depth stencil state): metal-rs
+    // makes its object types with a proc macro (foreign-types), and behind a
+    // pointer they leave this type's layout readable to tools that lay out
+    // types from source without expanding proc macros (rust-analyzer without a
+    // proc-macro server).
+    pipeline: Box<MetalPipelineState>,
 
-    pub(crate) render_encoder_info: Option<PipelineRenderEncoderInfo>,
+    pub(crate) render_encoder_info: Option<Box<PipelineRenderEncoderInfo>>,
     pub(crate) compute_encoder_info: Option<PipelineComputeEncoderInfo>,
 }
 
@@ -83,14 +88,14 @@ impl RafxPipelineMetal {
     }
 
     pub fn metal_render_pipeline(&self) -> Option<&metal_rs::RenderPipelineStateRef> {
-        match &self.pipeline {
+        match &*self.pipeline {
             MetalPipelineState::Graphics(pipeline) => Some(pipeline.as_ref()),
             MetalPipelineState::Compute(_) => None,
         }
     }
 
     pub fn metal_compute_pipeline(&self) -> Option<&metal_rs::ComputePipelineStateRef> {
-        match &self.pipeline {
+        match &*self.pipeline {
             MetalPipelineState::Graphics(_) => None,
             MetalPipelineState::Compute(pipeline) => Some(pipeline.as_ref()),
         }
@@ -340,8 +345,8 @@ impl RafxPipelineMetal {
         Ok(RafxPipelineMetal {
             root_signature: pipeline_def.root_signature.clone(),
             pipeline_type: pipeline_def.root_signature.pipeline_type(),
-            pipeline: MetalPipelineState::Graphics(pipeline),
-            render_encoder_info: Some(render_encoder_info),
+            pipeline: Box::new(MetalPipelineState::Graphics(pipeline)),
+            render_encoder_info: Some(Box::new(render_encoder_info)),
             compute_encoder_info: None,
         })
     }
@@ -398,7 +403,7 @@ impl RafxPipelineMetal {
         Ok(RafxPipelineMetal {
             root_signature: pipeline_def.root_signature.clone(),
             pipeline_type: pipeline_def.root_signature.pipeline_type(),
-            pipeline: MetalPipelineState::Compute(pipeline),
+            pipeline: Box::new(MetalPipelineState::Compute(pipeline)),
             render_encoder_info: None,
             compute_encoder_info: Some(compute_encoder_info),
         })

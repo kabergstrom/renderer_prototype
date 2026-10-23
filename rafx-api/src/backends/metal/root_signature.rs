@@ -85,6 +85,14 @@ pub(crate) struct RafxRootSignatureMetalInner {
     pub(crate) argument_descriptors: [Vec<ArgumentDescriptor>; MAX_DESCRIPTOR_SET_LAYOUTS],
     pub(crate) argument_buffer_resource_usages:
         [Arc<Vec<MTLResourceUsage>>; MAX_DESCRIPTOR_SET_LAYOUTS],
+    // Dynamic offsets buffer slots (crate::msl_dynamic_offset_index) of every buffer in each
+    // set: a bind of the set rewrites them (0, or the bind's dynamic offset).
+    pub(crate) buffer_dynamic_offset_slots: [Vec<u32>; MAX_DESCRIPTOR_SET_LAYOUTS],
+    // Slots of the set's RafxRootSignatureDef::dynamic_buffer_bindings in binding order: the
+    // order of a bind's dynamic offsets.
+    pub(crate) dynamic_binding_slots: [Vec<u32>; MAX_DESCRIPTOR_SET_LAYOUTS],
+    // Slots the shaders read: one past the highest buffer slot (0: no buffers).
+    pub(crate) dynamic_offsets_len: u32,
 }
 
 // for metal_rs::ArgumentDescriptor
@@ -244,9 +252,13 @@ impl RafxRootSignatureMetal {
 
                 let descriptor_index = RafxDescriptorIndex(descriptors.len() as u32);
 
+                // An immutable sampler is a constexpr sampler in the shader: it takes no
+                // argument buffer id (rafx-shader-processor msl_assign_argument_buffer_ids).
                 let argument_buffer_id = next_argument_buffer_id[resource.set_index as usize];
-                next_argument_buffer_id[resource.set_index as usize] +=
-                    resource.element_count_normalized();
+                if immutable_sampler.is_none() {
+                    next_argument_buffer_id[resource.set_index as usize] +=
+                        resource.element_count_normalized();
+                }
 
                 //let update_data_offset_in_set = Some(layout.update_data_count_per_set);
 
@@ -363,6 +375,57 @@ impl RafxRootSignatureMetal {
             }
         }
 
+        let mut buffer_dynamic_offset_slots = [vec![], vec![], vec![], vec![]];
+        let mut dynamic_binding_slots = [vec![], vec![], vec![], vec![]];
+        let mut dynamic_offsets_len = 0;
+        // descriptors are in binding order (merged_resources is sorted by binding)
+        for descriptor in &descriptors {
+            let is_buffer = descriptor.resource_type.intersects(
+                RafxResourceType::UNIFORM_BUFFER
+                    | RafxResourceType::BUFFER
+                    | RafxResourceType::BUFFER_READ_WRITE,
+            );
+            if !is_buffer || descriptor.element_count != 1 {
+                continue;
+            }
+            let Some(slot) =
+                crate::msl_dynamic_offset_index(descriptor.set_index, descriptor.binding)
+            else {
+                continue;
+            };
+            let set = descriptor.set_index as usize;
+            buffer_dynamic_offset_slots[set].push(slot);
+            dynamic_offsets_len = dynamic_offsets_len.max(slot + 1);
+            let is_dynamic = root_signature_def
+                .dynamic_buffer_bindings
+                .iter()
+                .any(|k| k.set == descriptor.set_index && k.binding == descriptor.binding);
+            if is_dynamic {
+                dynamic_binding_slots[set].push(slot);
+            }
+        }
+        for key in root_signature_def.dynamic_buffer_bindings {
+            let found = descriptors
+                .iter()
+                .any(|d| d.set_index == key.set && d.binding == key.binding);
+            let slotted = crate::msl_dynamic_offset_index(key.set, key.binding).map_or(
+                false,
+                |slot| {
+                    dynamic_binding_slots
+                        .get(key.set as usize)
+                        .map_or(false, |slots| slots.contains(&slot))
+                },
+            );
+            if found && !slotted {
+                Err(format!(
+                    "dynamic_buffer_bindings entry (set={} binding={}) must be a non-array buffer with binding < {}",
+                    key.set,
+                    key.binding,
+                    crate::MSL_DYNAMIC_OFFSET_BINDINGS_PER_SET
+                ))?;
+            }
+        }
+
         let argument_buffer_resource_usages = [
             Arc::new(std::mem::take(&mut resource_usages[0])),
             Arc::new(std::mem::take(&mut resource_usages[1])),
@@ -379,6 +442,9 @@ impl RafxRootSignatureMetal {
             push_constant_descriptors,
             argument_buffer_resource_usages,
             argument_descriptors,
+            buffer_dynamic_offset_slots,
+            dynamic_binding_slots,
+            dynamic_offsets_len,
         };
 
         Ok(RafxRootSignatureMetal {

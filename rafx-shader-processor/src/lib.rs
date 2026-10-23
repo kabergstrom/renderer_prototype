@@ -989,12 +989,14 @@ fn package_shader_stages(
             shader_package.metal = Some(RafxShaderPackageMetal::Src(
                 std::str::from_utf8(&metal_shader.new_src).unwrap().into(),
             ));
+            let constexpr_samplers =
+                reflect::msl_constexpr_sampler_bindings(&metal_output.reflection_data.reflection);
             shader_package.metal_reflection = metal_output
                 .reflection_data
                 .reflection
                 .iter()
                 .find(|r| r.rafx_api_reflection.shader_stage == shader_stage)
-                .cloned();
+                .map(|r| reflect::msl_reflection(r, &constexpr_samplers));
         }
 
         if let Some(gles2) = gles2_output {
@@ -1390,7 +1392,32 @@ fn cross_compile_to_metal(
                     )
                     .unwrap();
             }
-            //println!(" binding overrides {:?}", spirv_cross_msl_options.resource_binding_overrides);
+            // Every non-array buffer takes an offset from the dynamic offsets buffer
+            // (rafx_api::msl_dynamic_offset_index): an argument buffer holds one address per
+            // buffer, so a bind with dynamic offsets (RafxRootSignatureDef::dynamic_buffer_bindings)
+            // cannot change it. The Metal backend writes 0 for buffers bound without one.
+            spirv_cross_msl_options.dynamic_offsets_buffer_index =
+                rafx_api::MSL_DYNAMIC_OFFSETS_BUFFER_INDEX;
+            let mut dynamic_buffers = std::collections::BTreeSet::new();
+            for entry_point in &reflection_data.reflection {
+                for resource in &entry_point.rafx_api_reflection.resources {
+                    let is_buffer = resource.resource_type.intersects(
+                        rafx_api::RafxResourceType::UNIFORM_BUFFER
+                            | rafx_api::RafxResourceType::BUFFER
+                            | rafx_api::RafxResourceType::BUFFER_READ_WRITE,
+                    );
+                    if is_buffer && resource.element_count_normalized() == 1 {
+                        if let Some(index) =
+                            rafx_api::msl_dynamic_offset_index(resource.set_index, resource.binding)
+                        {
+                            dynamic_buffers.insert((resource.set_index, resource.binding, index));
+                        }
+                    }
+                }
+            }
+            for (set, binding, index) in dynamic_buffers {
+                compiler.add_dynamic_buffer(set, binding, index)?;
+            }
             //spirv_cross_msl_options.vertex_attribute_overrides
             for (binding, const_sampler) in &reflection_data.msl_const_samplers {
                 if let spirv_cross2::compile::msl::ResourceBinding::Qualified { set, binding } =

@@ -5,8 +5,15 @@ use crate::{RafxBufferDef, RafxMemoryUsage, RafxResourceType, RafxResult};
 pub struct RafxBufferMetal {
     device_context: RafxDeviceContextMetal,
     buffer_def: RafxBufferDef,
-    buffer: metal_rs::Buffer,
+    buffer: Box<MetalBuffer>,
 }
+
+// metal-rs makes its object types with a proc macro (foreign-types). Held in a
+// boxed struct of ours, they leave this type's layout readable to tools that lay
+// out types from source without expanding proc macros (rust-analyzer without a
+// proc-macro server).
+#[derive(Debug)]
+struct MetalBuffer(metal_rs::Buffer);
 
 // for metal_rs::Buffer
 unsafe impl Send for RafxBufferMetal {}
@@ -27,7 +34,7 @@ impl RafxBufferMetal {
     }
 
     pub fn metal_buffer(&self) -> &metal_rs::BufferRef {
-        self.buffer.as_ref()
+        self.buffer.0.as_ref()
     }
 
     pub fn map_buffer(&self) -> RafxResult<*mut u8> {
@@ -35,7 +42,7 @@ impl RafxBufferMetal {
             return Err("Cannot map GPU-only buffer")?;
         }
 
-        Ok(self.buffer.contents() as *mut u8)
+        Ok(self.buffer.0.contents() as *mut u8)
     }
 
     pub fn unmap_buffer(&self) -> RafxResult<()> {
@@ -44,7 +51,7 @@ impl RafxBufferMetal {
     }
 
     pub fn mapped_memory(&self) -> Option<*mut u8> {
-        Some(self.buffer.contents() as *mut u8)
+        Some(self.buffer.0.contents() as *mut u8)
     }
 
     pub fn copy_to_host_visible_buffer<T: Copy>(
@@ -108,7 +115,7 @@ impl RafxBufferMetal {
         Ok(RafxBufferMetal {
             device_context: device_context.clone(),
             buffer_def: buffer_def.clone(),
-            buffer,
+            buffer: Box::new(MetalBuffer(buffer)),
         })
     }
 }

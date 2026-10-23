@@ -37,8 +37,11 @@ pub(crate) fn resource_type_mtl_resource_usage(
 ) -> MTLResourceUsage {
     let mut usage = MTLResourceUsage::empty();
 
+    // Read: MTLResourceUsageSample is deprecated, and Sample alone leaves a sampled texture
+    // without the usage the GPU checks (shader validation: "MTLResourceUsage flags mismatch or
+    // missing for texture").
     if resource_type.intersects(RafxResourceType::TEXTURE) {
-        usage |= MTLResourceUsage::Sample;
+        usage |= MTLResourceUsage::Read | MTLResourceUsage::Sample;
     }
 
     if resource_type.intersects(RafxResourceType::TEXTURE_READ_WRITE) {

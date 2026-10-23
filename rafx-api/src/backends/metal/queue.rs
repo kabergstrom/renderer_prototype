@@ -1,6 +1,6 @@
 use crate::metal::{
     BarrierFlagsMetal, RafxCommandBufferMetal, RafxCommandPoolMetal, RafxDeviceContextMetal,
-    RafxFenceMetal, RafxSemaphoreMetal, RafxSwapchainMetal,
+    RafxFenceMetal, RafxSemaphoreMetal, RafxSwapchainMetal, RafxTimelineSemaphoreMetal,
 };
 use crate::{RafxCommandPoolDef, RafxPresentSuccessResult, RafxQueueType, RafxResult};
 use std::sync::atomic::AtomicUsize;
@@ -115,8 +115,10 @@ impl RafxQueueMetal {
     fn submit_semaphore_wait(
         &self,
         wait_semaphores: &[&RafxSemaphoreMetal],
+        wait_timeline: &[(&RafxTimelineSemaphoreMetal, u64)],
     ) {
-        let wait_command_buffer_required = wait_semaphores.iter().any(|x| x.signal_available());
+        let wait_command_buffer_required =
+            !wait_timeline.is_empty() || wait_semaphores.iter().any(|x| x.signal_available());
 
         if wait_command_buffer_required {
             let wait_command_buffer = self
@@ -128,6 +130,9 @@ impl RafxQueueMetal {
                     wait_command_buffer.encode_wait_for_event(wait_semaphore.metal_event(), 1);
                     wait_semaphore.set_signal_available(false);
                 }
+            }
+            for (semaphore, value) in wait_timeline {
+                wait_command_buffer.encode_wait_for_event(semaphore.metal_shared_event(), *value);
             }
 
             wait_command_buffer.commit();
@@ -141,8 +146,59 @@ impl RafxQueueMetal {
         signal_semaphores: &[&RafxSemaphoreMetal],
         signal_fence: Option<&RafxFenceMetal>,
     ) -> RafxResult<()> {
+        assert!(!command_buffers.is_empty());
+        self.submit_with_timeline(
+            command_buffers,
+            wait_semaphores,
+            signal_semaphores,
+            &[],
+            &[],
+            signal_fence,
+        )
+    }
+
+    /// Submit with timeline semaphore (`MTLSharedEvent`) waits and signals.
+    ///
+    /// - Waits are encoded on a command buffer committed ahead of the submitted ones: an event
+    ///   wait holds back the work the queue schedules after it.
+    /// - Signals are encoded on the last command buffer once its encoders have ended (Metal
+    ///   refuses event commands while an encoder is open). With no command buffers, an empty
+    ///   one carries the signals and the fence.
+    pub fn submit_with_timeline(
+        &self,
+        command_buffers: &[&RafxCommandBufferMetal],
+        wait_semaphores: &[&RafxSemaphoreMetal],
+        signal_semaphores: &[&RafxSemaphoreMetal],
+        wait_timeline: &[(&RafxTimelineSemaphoreMetal, u64)],
+        signal_timeline: &[(&RafxTimelineSemaphoreMetal, u64)],
+        signal_fence: Option<&RafxFenceMetal>,
+    ) -> RafxResult<()> {
         objc::rc::autoreleasepool(|| {
-            assert!(!command_buffers.is_empty());
+            self.submit_semaphore_wait(wait_semaphores, wait_timeline);
+
+            for command_buffer in command_buffers {
+                command_buffer.end_current_encoders(false)?;
+            }
+
+            let empty_command_buffer = if command_buffers.is_empty() {
+                Some(
+                    self.inner
+                        .queue
+                        .new_command_buffer_with_unretained_references()
+                        .to_owned(),
+                )
+            } else {
+                None
+            };
+            let metal_command_buffers: Vec<&metal_rs::CommandBufferRef> =
+                match &empty_command_buffer {
+                    Some(command_buffer) => vec![command_buffer.as_ref()],
+                    None => command_buffers
+                        .iter()
+                        .map(|x| x.metal_command_buffer().unwrap())
+                        .collect(),
+                };
+            let last = *metal_command_buffers.last().unwrap();
 
             // If a signal fence exists, mark it as submitted and add a closure to execute at the end
             // of each command buffer. The closure will have a shared atomic counter that is incremented
@@ -151,7 +207,7 @@ impl RafxQueueMetal {
             if let Some(signal_fence) = signal_fence {
                 signal_fence.set_submitted(true);
 
-                let command_count = command_buffers.len();
+                let command_count = metal_command_buffers.len();
                 let complete_count = Arc::new(AtomicUsize::new(0));
                 let dispatch_semaphore = signal_fence.metal_dispatch_semaphore().clone();
                 let block = block::ConcreteBlock::new(move |_command_buffer_ref| {
@@ -164,29 +220,40 @@ impl RafxQueueMetal {
                 })
                 .copy();
 
-                for command_buffer in command_buffers {
-                    command_buffer
-                        .metal_command_buffer()
-                        .unwrap()
-                        .add_completed_handler(&block);
+                for command_buffer in &metal_command_buffers {
+                    command_buffer.add_completed_handler(&block);
                 }
             }
 
-            for signal_semaphore in signal_semaphores {
-                command_buffers
-                    .last()
-                    .unwrap()
-                    .metal_command_buffer()
-                    .unwrap()
-                    .encode_signal_event(signal_semaphore.metal_event(), 1);
-                signal_semaphore.set_signal_available(true);
+            // A command buffer that fails (a GPU fault or timeout) skips the rest of its
+            // commands, its event signals included, and nothing else reports it.
+            let report_error = block::ConcreteBlock::new(
+                |command_buffer: &metal_rs::CommandBufferRef| {
+                    if command_buffer.status() == metal_rs::MTLCommandBufferStatus::Error {
+                        log::error!(
+                            "Metal command buffer failed: {}",
+                            command_buffer_error(command_buffer)
+                        );
+                    }
+                },
+            )
+            .copy();
+            for command_buffer in &metal_command_buffers {
+                command_buffer.add_completed_handler(&report_error);
             }
 
-            self.submit_semaphore_wait(wait_semaphores);
+            for signal_semaphore in signal_semaphores {
+                last.encode_signal_event(signal_semaphore.metal_event(), 1);
+                signal_semaphore.set_signal_available(true);
+            }
+            for (semaphore, value) in signal_timeline {
+                last.encode_signal_event(semaphore.metal_shared_event(), *value);
+            }
 
+            for command_buffer in &metal_command_buffers {
+                command_buffer.commit();
+            }
             for command_buffer in command_buffers {
-                command_buffer.end_current_encoders(false)?;
-                command_buffer.metal_command_buffer().unwrap().commit();
                 command_buffer.clear_command_buffer();
             }
 
@@ -201,7 +268,7 @@ impl RafxQueueMetal {
         _image_index: u32,
     ) -> RafxResult<RafxPresentSuccessResult> {
         objc::rc::autoreleasepool(|| {
-            self.submit_semaphore_wait(wait_semaphores);
+            self.submit_semaphore_wait(wait_semaphores, &[]);
 
             let command_buffer = self.inner.queue.new_command_buffer();
             let drawable = swapchain.take_drawable().unwrap();
@@ -212,4 +279,69 @@ impl RafxQueueMetal {
             Ok(RafxPresentSuccessResult::Success)
         })
     }
+}
+
+/// The `NSError` description of a failed command buffer.
+fn command_buffer_error(command_buffer: &metal_rs::CommandBufferRef) -> String {
+    use objc::runtime::Object;
+    use objc::{msg_send, sel, sel_impl};
+    unsafe {
+        let error: *mut Object = msg_send![command_buffer, error];
+        if error.is_null() {
+            return "no error object".to_string();
+        }
+        let description: *mut Object = msg_send![error, localizedDescription];
+        let mut message = ns_string(description);
+        // With MTLCommandBufferErrorOptionEncoderExecutionStatus: each encoder's label, debug
+        // groups and state (0 unknown, 1 completed, 2 affected, 3 pending, 4 faulted).
+        let user_info: *mut Object = msg_send![error, userInfo];
+        if !user_info.is_null() {
+            let key = ns_string_from_str("MTLCommandBufferEncoderInfoErrorKey");
+            let infos: *mut Object = msg_send![user_info, objectForKey: key];
+            if !infos.is_null() {
+                let count: usize = msg_send![infos, count];
+                for i in 0..count {
+                    let info: *mut Object = msg_send![infos, objectAtIndex: i];
+                    let state: isize = msg_send![info, errorState];
+                    if state == 1 {
+                        continue;
+                    }
+                    let label: *mut Object = msg_send![info, label];
+                    let signposts: *mut Object = msg_send![info, debugSignposts];
+                    let signpost_count: usize = msg_send![signposts, count];
+                    let signposts: Vec<String> = (0..signpost_count)
+                        .map(|j| {
+                            let signpost: *mut Object = msg_send![signposts, objectAtIndex: j];
+                            ns_string(signpost)
+                        })
+                        .collect();
+                    message.push_str(&format!(
+                        "\n  encoder {:?} state {} groups {:?}",
+                        ns_string(label),
+                        state,
+                        signposts
+                    ));
+                }
+            }
+        }
+        message
+    }
+}
+
+unsafe fn ns_string(string: *mut objc::runtime::Object) -> String {
+    use objc::{msg_send, sel, sel_impl};
+    if string.is_null() {
+        return String::new();
+    }
+    let text: *const std::os::raw::c_char = msg_send![string, UTF8String];
+    if text.is_null() {
+        return String::new();
+    }
+    std::ffi::CStr::from_ptr(text).to_string_lossy().into_owned()
+}
+
+unsafe fn ns_string_from_str(string: &str) -> *mut objc::runtime::Object {
+    use objc::{class, msg_send, sel, sel_impl};
+    let text = std::ffi::CString::new(string).unwrap();
+    msg_send![class!(NSString), stringWithUTF8String: text.as_ptr()]
 }

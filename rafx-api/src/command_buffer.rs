@@ -626,10 +626,11 @@ impl RafxCommandBuffer {
                 _dynamic_offsets,
             ),
             #[cfg(feature = "rafx-metal")]
-            RafxCommandBuffer::Metal(inner) => inner.cmd_bind_descriptor_set_handle(
+            RafxCommandBuffer::Metal(inner) => inner.cmd_bind_descriptor_set_handle_dynamic(
                 root_signature.metal_root_signature().unwrap(),
                 set_index,
                 descriptor_set_handle.metal_descriptor_set_handle().unwrap(),
+                _dynamic_offsets,
             ),
             #[cfg(feature = "rafx-gles2")]
             RafxCommandBuffer::Gles2(inner) => inner.cmd_bind_descriptor_set_handle(

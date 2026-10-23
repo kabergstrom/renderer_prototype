@@ -420,7 +420,10 @@ impl RafxDescriptorSetArrayMetal {
                     }
                 } else if texture_bind_type == RafxTextureBindType::Srv
                     || texture_bind_type == RafxTextureBindType::SrvStencil
+                    || texture_bind_type == RafxTextureBindType::SrvDepthReadOnly
                 {
+                    // SrvDepthReadOnly: Metal has no image layouts; a depth texture sampled while
+                    // bound as a depth attachment with depth writes off is the texture itself.
                     for texture in textures {
                         let metal_texture = texture.metal_texture().unwrap().metal_texture();
                         argument_buffer

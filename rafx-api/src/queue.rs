@@ -552,6 +552,37 @@ impl RafxQueue {
                     _signal_fence.map(|x| x.vk_fence().unwrap()),
                 )
             }
+            #[cfg(feature = "rafx-metal")]
+            RafxQueue::Metal(inner) => {
+                let command_buffers: Vec<_> = _command_buffers
+                    .iter()
+                    .map(|x| x.metal_command_buffer().unwrap())
+                    .collect();
+                let wait_binary: Vec<_> = _wait_binary
+                    .iter()
+                    .map(|x| x.metal_semaphore().unwrap())
+                    .collect();
+                let signal_binary: Vec<_> = _signal_binary
+                    .iter()
+                    .map(|x| x.metal_semaphore().unwrap())
+                    .collect();
+                let wait_timeline: Vec<_> = _wait_timeline
+                    .iter()
+                    .map(|(s, v)| (s.metal_timeline_semaphore().unwrap(), *v))
+                    .collect();
+                let signal_timeline: Vec<_> = _signal_timeline
+                    .iter()
+                    .map(|(s, v)| (s.metal_timeline_semaphore().unwrap(), *v))
+                    .collect();
+                inner.submit_with_timeline(
+                    &command_buffers,
+                    &wait_binary,
+                    &signal_binary,
+                    &wait_timeline,
+                    &signal_timeline,
+                    _signal_fence.map(|x| x.metal_fence().unwrap()),
+                )
+            }
             #[allow(unreachable_patterns)]
             _ => Err(crate::RafxError::StringError(
                 "submit_with_timeline is not supported on this backend".to_string(),

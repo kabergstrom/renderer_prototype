@@ -320,6 +320,31 @@ pub const MAX_VERTEX_INPUT_BINDINGS: usize = 16;
 // simultaneously
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
+/// Metal: the `[[buffer(n)]]` index of the dynamic offsets buffer (`spvDynamicOffsets`, spirv-cross'
+/// default) through which buffers bound with dynamic offsets get their offset.
+pub const MSL_DYNAMIC_OFFSETS_BUFFER_INDEX: u32 = 23;
+/// Metal: bindings below this per set can take a dynamic offset (`msl_dynamic_offset_index`).
+pub const MSL_DYNAMIC_OFFSET_BINDINGS_PER_SET: u32 = 16;
+
+/// Metal: the slot in the dynamic offsets buffer of the buffer at (set, binding). The shader
+/// processor marks every non-array uniform/storage buffer below
+/// `MSL_DYNAMIC_OFFSET_BINDINGS_PER_SET` dynamic at this slot (an argument buffer cannot carry an
+/// offset per bind), and the Metal backend fills the slot with the bind's dynamic offset, 0 for
+/// buffers bound without one. A fixed slot per (set, binding) keeps offsets valid across
+/// pipelines whose other bindings differ.
+pub fn msl_dynamic_offset_index(
+    set_index: u32,
+    binding: u32,
+) -> Option<u32> {
+    if (set_index as usize) < MAX_DESCRIPTOR_SET_LAYOUTS
+        && binding < MSL_DYNAMIC_OFFSET_BINDINGS_PER_SET
+    {
+        Some(set_index * MSL_DYNAMIC_OFFSET_BINDINGS_PER_SET + binding)
+    } else {
+        None
+    }
+}
+
 //
 // Exported public API
 //

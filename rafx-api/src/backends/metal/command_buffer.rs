@@ -45,7 +45,18 @@ pub struct RafxCommandBufferMetalInner {
 
     group_debug_name_stack: Vec<String>,
     debug_names_enabled: bool,
+
+    // The dynamic offsets buffer (crate::msl_dynamic_offset_index): the offset of every buffer
+    // slot, as the last bind of its set left it. Set with set_*_bytes before a draw or dispatch
+    // when dirty (a set bind, a pipeline bind or a new encoder since the last one).
+    dynamic_offsets: [u32; DYNAMIC_OFFSET_SLOTS],
+    // Slots the bound pipeline's shaders read.
+    dynamic_offsets_len: u32,
+    dynamic_offsets_dirty: bool,
 }
+
+const DYNAMIC_OFFSET_SLOTS: usize =
+    crate::MAX_DESCRIPTOR_SET_LAYOUTS * crate::MSL_DYNAMIC_OFFSET_BINDINGS_PER_SET as usize;
 
 unsafe impl Send for RafxCommandBufferMetalInner {}
 unsafe impl Sync for RafxCommandBufferMetalInner {}
@@ -53,7 +64,11 @@ unsafe impl Sync for RafxCommandBufferMetalInner {}
 #[derive(Debug)]
 pub struct RafxCommandBufferMetal {
     queue: RafxQueueMetal,
-    inner: TrustCell<RafxCommandBufferMetalInner>,
+    // Boxed: metal-rs makes its object types with a proc macro (foreign-types),
+    // and behind a pointer they leave this type's layout readable to tools that
+    // lay out types from source without expanding proc macros (rust-analyzer
+    // without a proc-macro server).
+    inner: Box<TrustCell<RafxCommandBufferMetalInner>>,
 }
 
 impl RafxCommandBufferMetal {
@@ -127,20 +142,32 @@ impl RafxCommandBufferMetal {
                 .device_context()
                 .device_info()
                 .debug_names_enabled,
+            dynamic_offsets: [0; DYNAMIC_OFFSET_SLOTS],
+            dynamic_offsets_len: 0,
+            dynamic_offsets_dirty: false,
         };
 
         Ok(RafxCommandBufferMetal {
             queue: command_pool.queue().clone(),
-            inner: TrustCell::new(inner),
+            inner: Box::new(TrustCell::new(inner)),
         })
     }
 
     pub fn begin(&self) -> RafxResult<()> {
         objc::rc::autoreleasepool(|| {
-            let command_buffer = self.queue.metal_queue().new_command_buffer();
             let mut inner = self.inner.borrow_mut();
-            inner.command_buffer = Some(command_buffer.to_owned());
+            let command_buffer = if inner.debug_names_enabled {
+                // With debug names, a failed command buffer reports each encoder's execution
+                // status (its label and debug groups), naming the one that faulted.
+                new_command_buffer_reporting_encoder_status(self.queue.metal_queue())
+            } else {
+                self.queue.metal_queue().new_command_buffer().to_owned()
+            };
+            inner.command_buffer = Some(command_buffer);
             inner.last_pipeline_type = None;
+            inner.dynamic_offsets = [0; DYNAMIC_OFFSET_SLOTS];
+            inner.dynamic_offsets_len = 0;
+            inner.dynamic_offsets_dirty = false;
             Ok(())
         })
     }
@@ -273,6 +300,7 @@ impl RafxCommandBufferMetal {
             }
 
             inner.render_encoder = Some(render_encoder.to_owned());
+            inner.dynamic_offsets_dirty = true;
             self.wait_for_barriers(&*inner)?;
             // set heaps?
 
@@ -441,6 +469,14 @@ impl RafxCommandBufferMetal {
 
             let barrier_required = last_pipeline_type != Some(pipeline.pipeline_type());
 
+            inner.dynamic_offsets_len = pipeline
+                .root_signature()
+                .metal_root_signature()
+                .unwrap()
+                .inner
+                .dynamic_offsets_len;
+            inner.dynamic_offsets_dirty = true;
+
             match pipeline.pipeline_type() {
                 RafxPipelineType::Graphics => {
                     let render_encoder = inner.render_encoder.as_ref().unwrap();
@@ -589,7 +625,7 @@ impl RafxCommandBufferMetal {
             .metal_argument_buffer_and_offset(index)
             .unwrap();
         self.do_bind_descriptor_set(
-            &*self.inner.borrow(),
+            &mut *self.inner.borrow_mut(),
             descriptor_set_array
                 .root_signature()
                 .metal_root_signature()
@@ -599,6 +635,7 @@ impl RafxCommandBufferMetal {
             offset,
             index,
             descriptor_set_array.argument_buffer_data().unwrap(),
+            &[],
         )
     }
 
@@ -608,30 +645,65 @@ impl RafxCommandBufferMetal {
         set_index: u32,
         descriptor_set_handle: &RafxDescriptorSetHandleMetal,
     ) -> RafxResult<()> {
+        self.cmd_bind_descriptor_set_handle_dynamic(
+            root_signature,
+            set_index,
+            descriptor_set_handle,
+            &[],
+        )
+    }
+
+    /// Dynamic offsets apply to the set's `RafxRootSignatureDef::dynamic_buffer_bindings` in
+    /// binding order, through the dynamic offsets buffer the shader processor's Metal output
+    /// reads (crate::msl_dynamic_offset_index).
+    pub fn cmd_bind_descriptor_set_handle_dynamic(
+        &self,
+        root_signature: &RafxRootSignatureMetal,
+        set_index: u32,
+        descriptor_set_handle: &RafxDescriptorSetHandleMetal,
+        dynamic_offsets: &[u32],
+    ) -> RafxResult<()> {
         let buffer = descriptor_set_handle.metal_buffer();
         let offset = descriptor_set_handle.offset();
         let array_index = descriptor_set_handle.array_index();
         self.do_bind_descriptor_set(
-            &*self.inner.borrow(),
+            &mut *self.inner.borrow_mut(),
             root_signature,
             set_index,
             buffer,
             offset,
             array_index,
             descriptor_set_handle.argument_buffer_data(),
+            dynamic_offsets,
         )
     }
 
     fn do_bind_descriptor_set(
         &self,
-        inner: &RafxCommandBufferMetalInner,
+        inner: &mut RafxCommandBufferMetalInner,
         root_signature: &RafxRootSignatureMetal,
         set_index: u32,
         argument_buffer: &metal_rs::BufferRef,
         argument_buffer_offset: u32,
         array_index: u32,
         argument_buffer_data: &ArgumentBufferData,
+        dynamic_offsets: &[u32],
     ) -> RafxResult<()> {
+        if let Some(slots) = root_signature
+            .inner
+            .buffer_dynamic_offset_slots
+            .get(set_index as usize)
+        {
+            for &slot in slots {
+                inner.dynamic_offsets[slot as usize] = 0;
+            }
+            let dynamic_slots = &root_signature.inner.dynamic_binding_slots[set_index as usize];
+            for (&slot, &offset) in dynamic_slots.iter().zip(dynamic_offsets) {
+                inner.dynamic_offsets[slot as usize] = offset;
+            }
+            inner.dynamic_offsets_dirty = true;
+        }
+
         match root_signature.pipeline_type() {
             RafxPipelineType::Graphics => {
                 //NOTE: Another reason for hitting this might be doing something that flushes the
@@ -736,11 +808,30 @@ impl RafxCommandBufferMetal {
         }
     }
 
+    // The dynamic offsets buffer for the next draw or dispatch, when a bind changed it.
+    fn flush_dynamic_offsets(&self) {
+        let mut inner = self.inner.borrow_mut();
+        if !inner.dynamic_offsets_dirty || inner.dynamic_offsets_len == 0 {
+            return;
+        }
+        inner.dynamic_offsets_dirty = false;
+        let length = (inner.dynamic_offsets_len as usize * std::mem::size_of::<u32>()) as u64;
+        let bytes = inner.dynamic_offsets.as_ptr() as *const std::ffi::c_void;
+        let index = crate::MSL_DYNAMIC_OFFSETS_BUFFER_INDEX as u64;
+        if let Some(render_encoder) = &inner.render_encoder {
+            render_encoder.set_vertex_bytes(index, length, bytes);
+            render_encoder.set_fragment_bytes(index, length, bytes);
+        } else if let Some(compute_encoder) = &inner.compute_encoder {
+            compute_encoder.set_bytes(index, length, bytes);
+        }
+    }
+
     pub fn cmd_draw(
         &self,
         vertex_count: u32,
         first_vertex: u32,
     ) -> RafxResult<()> {
+        self.flush_dynamic_offsets();
         let inner = self.inner.borrow();
         inner.render_encoder.as_ref().unwrap().draw_primitives(
             inner.primitive_type,
@@ -763,6 +854,7 @@ impl RafxCommandBufferMetal {
             assert_eq!(first_instance, 0);
         }
 
+        self.flush_dynamic_offsets();
         let inner = self.inner.borrow();
 
         if first_instance == 0 {
@@ -804,6 +896,7 @@ impl RafxCommandBufferMetal {
             assert_eq!(vertex_offset, 0);
         }
 
+        self.flush_dynamic_offsets();
         let inner = self.inner.borrow();
         let stride = inner.current_index_buffer_stride;
         if vertex_offset == 0 {
@@ -852,6 +945,7 @@ impl RafxCommandBufferMetal {
             assert_eq!(first_instance, 0);
         }
 
+        self.flush_dynamic_offsets();
         let inner = self.inner.borrow();
         let stride = inner.current_index_buffer_stride;
         if vertex_offset == 0 && first_instance == 0 {
@@ -896,6 +990,7 @@ impl RafxCommandBufferMetal {
         let features = self.queue.device_context().metal_features();
         assert!(features.supports_indirect_buffers);
 
+        self.flush_dynamic_offsets();
         let inner = self.inner.borrow();
         for i in 0..draw_count {
             let byte_offset = std::mem::size_of::<RafxDrawIndirectCommand>() as u32 * i;
@@ -922,6 +1017,7 @@ impl RafxCommandBufferMetal {
         let features = self.queue.device_context().metal_features();
         assert!(features.supports_indirect_buffers);
 
+        self.flush_dynamic_offsets();
         let inner = self.inner.borrow();
         for i in 0..draw_count {
             let byte_offset = std::mem::size_of::<RafxDrawIndexedIndirectCommand>() as u32 * i;
@@ -947,6 +1043,7 @@ impl RafxCommandBufferMetal {
         group_count_y: u32,
         group_count_z: u32,
     ) -> RafxResult<()> {
+        self.flush_dynamic_offsets();
         let inner = self.inner.borrow();
 
         let group_count = MTLSize {
@@ -972,6 +1069,7 @@ impl RafxCommandBufferMetal {
         group_count_y: u32,
         group_count_z: u32,
     ) -> RafxResult<()> {
+        self.flush_dynamic_offsets();
         let inner = self.inner.borrow();
         self.wait_for_barriers(&*inner)?;
 
@@ -1075,73 +1173,17 @@ impl RafxCommandBufferMetal {
             }
         };
 
-        let texture_def = dst_texture.texture_def();
-        let width = if params.buffer_extents.width != 0 {
-            params.buffer_extents.width
-        } else {
-            texture_def.extents.width
-        };
-        let height = if params.buffer_extents.height != 0 {
-            params.buffer_extents.height
-        } else {
-            texture_def.extents.height
-        };
-        let depth = if params.buffer_extents.depth != 0 {
-            params.buffer_extents.depth
-        } else {
-            texture_def.extents.depth
-        };
-        let width = 1.max(width >> params.mip_level);
-        let height = 1.max(height >> params.mip_level);
-        let depth = 1.max(depth >> params.mip_level);
-
-        // For a compressed format, sourceBytesPerRow is the number of bytes from the start of one row of blocks to the start of the next row of blocks.
-        let format = texture_def.format;
-        let block_size_in_bytes = format.block_or_pixel_size_in_bytes();
-        let block_width_in_pixels = format.block_width_in_pixels();
-        let texture_width_in_blocks =
-            rafx_base::memory::round_size_up_to_alignment_u32(width, block_width_in_pixels)
-                / block_width_in_pixels;
-
-        let device_info = self.queue.device_context().device_info();
-        let texture_alignment = device_info.upload_texture_alignment;
-        let row_alignment = device_info.upload_texture_row_alignment;
-
-        let source_bytes_per_row = rafx_base::memory::round_size_up_to_alignment_u32(
-            texture_width_in_blocks * block_size_in_bytes,
-            row_alignment,
+        let (source_size, source_bytes_per_row, source_bytes_per_image) = self.copy_region(
+            dst_texture.texture_def(),
+            params.mip_level,
+            &params.buffer_extents,
         );
-        let source_bytes_per_image = rafx_base::memory::round_size_up_to_alignment_u32(
-            height * source_bytes_per_row,
-            texture_alignment,
-        );
-
-        let source_width = if params.buffer_extents.width != 0 {
-            params.buffer_extents.width
-        } else {
-            width
-        };
-        let source_height = if params.buffer_extents.height != 0 {
-            params.buffer_extents.height
-        } else {
-            height
-        };
-        let source_depth = if params.buffer_extents.depth != 0 {
-            params.buffer_extents.depth
-        } else {
-            depth
-        };
-        let source_size = MTLSize {
-            width: source_width as _,
-            height: source_height as _,
-            depth: source_depth as _,
-        };
 
         blit_encoder.copy_from_buffer_to_texture(
             src_buffer.metal_buffer(),
             params.buffer_offset as _,
-            source_bytes_per_row as _,
-            source_bytes_per_image as _,
+            source_bytes_per_row,
+            source_bytes_per_image,
             source_size,
             dst_texture.metal_texture(),
             params.array_layer as _,
@@ -1178,47 +1220,11 @@ impl RafxCommandBufferMetal {
             }
         };
 
-        let texture_def = src_texture.texture_def();
-        let width = if params.buffer_extents.width != 0 {
-            params.buffer_extents.width
-        } else {
-            texture_def.extents.width
-        };
-        let height = if params.buffer_extents.height != 0 {
-            params.buffer_extents.height
-        } else {
-            texture_def.extents.height
-        };
-        let depth = if params.buffer_extents.depth != 0 {
-            params.buffer_extents.depth
-        } else {
-            texture_def.extents.depth
-        };
-        let width = 1.max(width >> params.mip_level);
-        let height = 1.max(height >> params.mip_level);
-        let depth = 1.max(depth >> params.mip_level);
-
-        let format = texture_def.format;
-        let block_size_in_bytes = format.block_or_pixel_size_in_bytes();
-        let block_width_in_pixels = format.block_width_in_pixels();
-        let texture_width_in_blocks =
-            rafx_base::memory::round_size_up_to_alignment_u32(width, block_width_in_pixels)
-                / block_width_in_pixels;
-
-        let device_info = self.queue.device_context().device_info();
-        let row_alignment = device_info.upload_texture_row_alignment;
-
-        let dest_bytes_per_row = rafx_base::memory::round_size_up_to_alignment_u32(
-            texture_width_in_blocks * block_size_in_bytes,
-            row_alignment,
+        let (source_size, dest_bytes_per_row, dest_bytes_per_image) = self.copy_region(
+            src_texture.texture_def(),
+            params.mip_level,
+            &params.buffer_extents,
         );
-        let dest_bytes_per_image = height * dest_bytes_per_row;
-
-        let source_size = MTLSize {
-            width: width as _,
-            height: height as _,
-            depth: depth as _,
-        };
 
         blit_encoder.copy_from_texture_to_buffer(
             src_texture.metal_texture(),
@@ -1232,11 +1238,57 @@ impl RafxCommandBufferMetal {
             source_size,
             dst_buffer.metal_buffer(),
             params.buffer_offset as _,
-            dest_bytes_per_row as _,
-            dest_bytes_per_image as _,
+            dest_bytes_per_row,
+            dest_bytes_per_image,
             MTLBlitOption::empty(),
         );
         Ok(())
+    }
+
+    /// A buffer/texture copy's texel size and the buffer's row and image strides in bytes.
+    /// Explicit extents are the copied region of this mip, as on Vulkan and DX12; only the
+    /// whole-texture fallback is scaled down to the mip. The buffer holds the region tightly
+    /// packed, in rows of whole blocks.
+    fn copy_region(
+        &self,
+        texture_def: &crate::RafxTextureDef,
+        mip_level: u8,
+        buffer_extents: &crate::RafxExtents3D,
+    ) -> (MTLSize, u64, u64) {
+        let mip_extent = |explicit: u32, full: u32| {
+            if explicit != 0 {
+                explicit
+            } else {
+                1.max(full >> mip_level)
+            }
+        };
+        let width = mip_extent(buffer_extents.width, texture_def.extents.width);
+        let height = mip_extent(buffer_extents.height, texture_def.extents.height);
+        let depth = mip_extent(buffer_extents.depth, texture_def.extents.depth);
+
+        // For a compressed format, bytes per row is the distance between rows of blocks.
+        let format = texture_def.format;
+        let block_width = format.block_width_in_pixels();
+        let block_height = format.block_height_in_pixels();
+        let width_in_blocks = (width + block_width - 1) / block_width;
+        let height_in_blocks = (height + block_height - 1) / block_height;
+        let row_alignment = self
+            .queue
+            .device_context()
+            .device_info()
+            .upload_texture_row_alignment;
+        let bytes_per_row = rafx_base::memory::round_size_up_to_alignment_u32(
+            width_in_blocks * format.block_or_pixel_size_in_bytes(),
+            row_alignment,
+        ) as u64;
+        let bytes_per_image = bytes_per_row * height_in_blocks as u64;
+
+        let size = MTLSize {
+            width: width as _,
+            height: height as _,
+            depth: depth as _,
+        };
+        (size, bytes_per_row, bytes_per_image)
     }
 
     fn create_blit_command_encoder(inner: &mut RafxCommandBufferMetalInner) -> BlitCommandEncoder {
@@ -1366,5 +1418,23 @@ impl RafxCommandBufferMetal {
                 encoder.pop_debug_group();
             }
         }
+    }
+}
+
+/// A command buffer whose error, if it fails, lists each encoder's execution status
+/// (`MTLCommandBufferErrorOptionEncoderExecutionStatus`).
+fn new_command_buffer_reporting_encoder_status(
+    queue: &metal_rs::CommandQueueRef
+) -> metal_rs::CommandBuffer {
+    use objc::runtime::Object;
+    use objc::{class, msg_send, sel, sel_impl};
+    unsafe {
+        let descriptor: *mut Object = msg_send![class!(MTLCommandBufferDescriptor), new];
+        // MTLCommandBufferErrorOptionEncoderExecutionStatus
+        let () = msg_send![descriptor, setErrorOptions: 1u64];
+        let command_buffer: *mut metal_rs::MTLCommandBuffer =
+            msg_send![queue, commandBufferWithDescriptor: descriptor];
+        let () = msg_send![descriptor, release];
+        metal_rs::CommandBufferRef::from_ptr(command_buffer).to_owned()
     }
 }

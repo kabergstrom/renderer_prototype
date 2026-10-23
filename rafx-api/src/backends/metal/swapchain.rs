@@ -34,14 +34,22 @@ impl RafxSwapchainMetalEdrInfo {
 pub struct RafxSwapchainMetal {
     device_context: RafxDeviceContextMetal,
     window: extra_ffi::NSWindowWrapper,
-    layer: metal_rs::MetalLayer,
-    drawable: TrustCell<Option<metal_rs::MetalDrawable>>,
+    metal: Box<MetalLayerState>,
     swapchain_def: RafxSwapchainDef,
     format: RafxFormat,
     color_space: RafxSwapchainColorSpace,
     // Just fake this
     next_swapchain_image_index: u32,
     edr_info: RafxSwapchainMetalEdrInfo,
+}
+
+// metal-rs makes its object types with a proc macro (foreign-types). Held in a
+// boxed struct of ours, they leave this type's layout readable to tools that lay
+// out types from source without expanding proc macros (rust-analyzer without a
+// proc-macro server).
+struct MetalLayerState {
+    layer: metal_rs::MetalLayer,
+    drawable: TrustCell<Option<metal_rs::MetalDrawable>>,
 }
 
 // for metal_rs::CAMetalDrawable
@@ -68,15 +76,15 @@ impl RafxSwapchainMetal {
     /// A framebuffer-only layer (the CAMetalLayer default) gives drawables
     /// that cannot be blit sources.
     pub fn copy_src_supported(&self) -> bool {
-        !self.layer.framebuffer_only()
+        !self.metal.layer.framebuffer_only()
     }
 
     pub fn metal_layer(&self) -> &metal_rs::MetalLayerRef {
-        self.layer.as_ref()
+        self.metal.layer.as_ref()
     }
 
     pub(crate) fn take_drawable(&self) -> Option<metal_rs::MetalDrawable> {
-        self.drawable.borrow_mut().take()
+        self.metal.drawable.borrow_mut().take()
     }
 
     //
@@ -150,6 +158,9 @@ impl RafxSwapchainMetal {
         // https://developer.apple.com/documentation/quartzcore/cametallayer/1478155-pixelformat
         layer.set_pixel_format(pixel_format);
         layer.set_presents_with_transaction(false);
+        // Drawables that can be blit sources (a screenshot of the presented image), as the
+        // Vulkan backend's swapchain images are TRANSFER_SRC where the surface allows it.
+        layer.set_framebuffer_only(false);
         layer.set_display_sync_enabled(swapchain_def.enable_vsync);
         layer.set_wants_extended_dynamic_range_content(is_extended);
         extra_ffi::set_colorspace(&layer, &color_space);
@@ -166,8 +177,10 @@ impl RafxSwapchainMetal {
         Ok(RafxSwapchainMetal {
             device_context: device_context.clone(),
             window,
-            layer,
-            drawable: Default::default(),
+            metal: Box::new(MetalLayerState {
+                layer,
+                drawable: Default::default(),
+            }),
             swapchain_def,
             next_swapchain_image_index: 0,
             format: swapchain_format,
@@ -180,7 +193,7 @@ impl RafxSwapchainMetal {
         &mut self,
         swapchain_def: &RafxSwapchainDef,
     ) -> RafxResult<()> {
-        self.layer.set_drawable_size(CGSize::new(
+        self.metal.layer.set_drawable_size(CGSize::new(
             swapchain_def.width as f64,
             swapchain_def.height as f64,
         ));
@@ -211,11 +224,12 @@ impl RafxSwapchainMetal {
             // It would be possible to submit render commands to an off-screen render target and then present
             // later.
             let drawable = self
+                .metal
                 .layer
                 .next_drawable()
                 .ok_or("Timed out while trying to acquire drawable".to_string())?;
 
-            let mut old_drawable = self.drawable.borrow_mut();
+            let mut old_drawable = self.metal.drawable.borrow_mut();
             assert!(old_drawable.is_none());
             *old_drawable = Some(drawable.to_owned());
 
