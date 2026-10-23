@@ -155,6 +155,18 @@ impl RafxTextureMetal {
             _ => unreachable!(),
         };
 
+        // A storage texture in an sRGB format stores through its UNORM twin
+        // (as on Vulkan and DX12): shader writes to an sRGB view encode, so
+        // values the shader already encoded would be encoded twice. The
+        // texture is made with PixelFormatView below, which the twin view
+        // needs; an existing image may lack it, so it keeps its format.
+        let storage_twin = if existing_image.is_none() {
+            texture_def.format.srgb_storage_twin()
+        } else {
+            None
+        };
+        let uav_format = storage_twin.unwrap_or(texture_def.format);
+
         let image = if let Some(existing_image) = existing_image {
             existing_image
         } else {
@@ -216,7 +228,7 @@ impl RafxTextureMetal {
             for mip_level in 0..texture_def.mip_count {
                 let levels = metal_rs::NSRange::new(mip_level as _, 1);
                 mip_level_uav_views.push(image.metal_texture().new_texture_view_from_slice(
-                    texture_def.format.into(),
+                    uav_format.into(),
                     uav_texture_type,
                     levels,
                     slices,
