@@ -2119,6 +2119,23 @@ impl RafxFormat {
         self == RafxFormat::UNDEFINED
     }
 
+    /// The UNORM format with the same bits as an uncompressed 8-bit sRGB format; `None` for any
+    /// other format. A storage (`TEXTURE_READ_WRITE`) texture in an sRGB format stores through
+    /// it: shaders write sRGB-encoded values, sampling decodes them and render targets blend and
+    /// encode as for any sRGB texture. sRGB formats have no storage support of their own.
+    pub fn srgb_storage_twin(self) -> Option<RafxFormat> {
+        match self {
+            RafxFormat::R8_SRGB => Some(RafxFormat::R8_UNORM),
+            RafxFormat::R8G8_SRGB => Some(RafxFormat::R8G8_UNORM),
+            RafxFormat::R8G8B8_SRGB => Some(RafxFormat::R8G8B8_UNORM),
+            RafxFormat::B8G8R8_SRGB => Some(RafxFormat::B8G8R8_UNORM),
+            RafxFormat::R8G8B8A8_SRGB => Some(RafxFormat::R8G8B8A8_UNORM),
+            RafxFormat::B8G8R8A8_SRGB => Some(RafxFormat::B8G8R8A8_UNORM),
+            RafxFormat::A8B8G8R8_SRGB_PACK32 => Some(RafxFormat::A8B8G8R8_UNORM_PACK32),
+            _ => None,
+        }
+    }
+
     pub fn is_srgb(self) -> bool {
         match self {
             RafxFormat::UNDEFINED => false,

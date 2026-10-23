@@ -277,32 +277,48 @@ impl RafxTextureVulkan {
             .contains(RafxResourceType::TEXTURE_CUBE);
         let format_vk = texture_def.format.into();
 
+        //
+        // Determine image usage flags
+        //
+        let mut usage_flags =
+            super::util::resource_type_image_usage_flags(texture_def.resource_type);
+        if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_COLOR)
+        {
+            usage_flags |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
+        } else if texture_def
+            .resource_type
+            .intersects(RafxResourceType::RENDER_TARGET_DEPTH_STENCIL)
+        {
+            usage_flags |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
+        }
+
+        if usage_flags.intersects(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::STORAGE) {
+            usage_flags |= vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST;
+        }
+
+        // A storage texture in an sRGB format stores through its UNORM twin
+        // (RafxFormat::srgb_storage_twin), as the DX12 backend's typeless resource does: the
+        // image is MUTABLE_FORMAT, its UAVs use the twin, its SRV and RTVs keep the sRGB format
+        // with STORAGE left out of their usage (sRGB formats have no storage support).
+        let storage_twin: Option<vk::Format> = if existing_image.is_none()
+            && texture_def
+                .resource_type
+                .intersects(RafxResourceType::TEXTURE_READ_WRITE)
+        {
+            texture_def.format.srgb_storage_twin().map(Into::into)
+        } else {
+            None
+        };
+        let mut srgb_view_usage = vk::ImageViewUsageCreateInfo::builder()
+            .usage(usage_flags & !vk::ImageUsageFlags::STORAGE)
+            .build();
+
         // create the image
         let image = if let Some(existing_image) = existing_image {
             existing_image
         } else {
-            //
-            // Determine image usage flags
-            //
-            let mut usage_flags =
-                super::util::resource_type_image_usage_flags(texture_def.resource_type);
-            if texture_def
-                .resource_type
-                .intersects(RafxResourceType::RENDER_TARGET_COLOR)
-            {
-                usage_flags |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
-            } else if texture_def
-                .resource_type
-                .intersects(RafxResourceType::RENDER_TARGET_DEPTH_STENCIL)
-            {
-                usage_flags |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
-            }
-
-            if usage_flags.intersects(vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::STORAGE) {
-                usage_flags |=
-                    vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST;
-            }
-
             //
             // Determine image create flags
             //
@@ -312,6 +328,11 @@ impl RafxTextureVulkan {
             }
             if image_type == vk::ImageType::TYPE_3D {
                 create_flags |= vk::ImageCreateFlags::TYPE_2D_ARRAY_COMPATIBLE_KHR
+            }
+            if storage_twin.is_some() {
+                // EXTENDED_USAGE: STORAGE is supported by the twin, not by the image's own format.
+                create_flags |=
+                    vk::ImageCreateFlags::MUTABLE_FORMAT | vk::ImageCreateFlags::EXTENDED_USAGE;
             }
 
             //TODO: Could check vkGetPhysicalDeviceFormatProperties for if we support the format for
@@ -323,7 +344,7 @@ impl RafxTextureVulkan {
                 depth: texture_def.extents.depth,
             };
 
-            let image_create_info = vk::ImageCreateInfo::builder()
+            let mut image_create_info = vk::ImageCreateInfo::builder()
                 .image_type(image_type)
                 .extent(extent)
                 .mip_levels(texture_def.mip_count)
@@ -335,6 +356,19 @@ impl RafxTextureVulkan {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .samples(texture_def.sample_count.into())
                 .flags(create_flags);
+
+            // The two formats a mutable sRGB storage image is viewed in (core in Vulkan 1.2):
+            // lets drivers keep it compressed.
+            let view_formats = [format_vk, storage_twin.unwrap_or(format_vk)];
+            let mut format_list =
+                vk::ImageFormatListCreateInfo::builder().view_formats(&view_formats);
+            let api_version = device_context
+                .physical_device_info()
+                .properties
+                .api_version;
+            if storage_twin.is_some() && api_version >= vk::make_api_version(0, 1, 2, 0) {
+                image_create_info = image_create_info.push_next(&mut format_list);
+            }
 
             let device = device_context.device();
             let image = unsafe { device.create_image(&image_create_info, None)? };
@@ -401,6 +435,9 @@ impl RafxTextureVulkan {
             .format(format_vk)
             .components(vk::ComponentMapping::default())
             .subresource_range(*subresource_range);
+        if storage_twin.is_some() {
+            image_view_create_info = image_view_create_info.push_next(&mut srgb_view_usage);
+        }
 
         // Create SRV without stencil
         let srv_view = if texture_def
@@ -450,6 +487,10 @@ impl RafxTextureVulkan {
 
             image_view_create_info.view_type = image_view_type;
             image_view_create_info.subresource_range.level_count = 1;
+            if let Some(twin) = storage_twin {
+                image_view_create_info.format = twin;
+                image_view_create_info.p_next = std::ptr::null();
+            }
 
             let mut uav_views = Vec::with_capacity(texture_def.mip_count as usize);
             for i in 0..texture_def.mip_count {
@@ -503,6 +544,9 @@ impl RafxTextureVulkan {
                 .format(format_vk)
                 .components(vk::ComponentMapping::default())
                 .subresource_range(*subresource_range);
+            if storage_twin.is_some() {
+                image_view_create_info = image_view_create_info.push_next(&mut srgb_view_usage);
+            }
 
             render_target_view = Some(unsafe {
                 device_context
