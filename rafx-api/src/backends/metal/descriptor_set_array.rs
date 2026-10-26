@@ -280,11 +280,20 @@ impl RafxDescriptorSetArrayMetal {
                     ))?;
                 }
             }
-            RafxDescriptorKey::Binding(binding) => layout
-                .binding_to_descriptor_index
-                .get(binding)
-                .copied()
-                .ok_or_else(|| format!("Could not find descriptor {:?}", update.descriptor_key,))?,
+            RafxDescriptorKey::Binding(binding) => match layout.binding_to_descriptor_index.get(binding) {
+                Some(descriptor_index) => *descriptor_index,
+                // A shader's immutable sampler is a constexpr sampler in MSL and has no place
+                // in the Metal layout (rafx-shader-processor msl_reflection). A caller that
+                // binds it anyway, as it must on backends that read the binding, is ignored.
+                None if update.elements.samplers.is_some()
+                    && update.elements.textures.is_none()
+                    && update.elements.buffers.is_none()
+                    && update.elements.buffer_offset_sizes.is_none() =>
+                {
+                    return Ok(());
+                }
+                None => Err(format!("Could not find descriptor {:?}", update.descriptor_key))?,
+            },
             RafxDescriptorKey::DescriptorIndex(descriptor_index) => *descriptor_index,
             RafxDescriptorKey::Undefined => {
                 return Err("Passed RafxDescriptorKey::Undefined to update_descriptor_set()")?
