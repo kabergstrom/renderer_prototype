@@ -408,14 +408,12 @@ impl RafxRootSignatureMetal {
             let found = descriptors
                 .iter()
                 .any(|d| d.set_index == key.set && d.binding == key.binding);
-            let slotted = crate::msl_dynamic_offset_index(key.set, key.binding).map_or(
-                false,
-                |slot| {
+            let slotted =
+                crate::msl_dynamic_offset_index(key.set, key.binding).map_or(false, |slot| {
                     dynamic_binding_slots
                         .get(key.set as usize)
                         .map_or(false, |slots| slots.contains(&slot))
-                },
-            );
+                });
             if found && !slotted {
                 Err(format!(
                     "dynamic_buffer_bindings entry (set={} binding={}) must be a non-array buffer with binding < {}",

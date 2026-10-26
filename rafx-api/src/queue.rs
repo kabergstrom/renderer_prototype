@@ -154,9 +154,7 @@ impl RafxQueue {
             #[cfg(feature = "rafx-vulkan")]
             RafxQueue::Vk(inner) => inner.timestamp_period_ns(),
             #[cfg(feature = "rafx-metal")]
-            RafxQueue::Metal(_) => {
-                Err("GPU timestamp queries are not implemented on the metal backend")?
-            }
+            RafxQueue::Metal(inner) => inner.timestamp_period_ns(),
             #[cfg(feature = "rafx-gles2")]
             RafxQueue::Gles2(_) => {
                 Err("GPU timestamp queries are not implemented on the gles2 backend")?

@@ -49,5 +49,8 @@ pub use sampler::*;
 mod pipeline;
 pub use pipeline::*;
 
+mod query_pool;
+pub use query_pool::*;
+
 mod internal;
 pub(crate) use internal::*;

@@ -506,7 +506,10 @@ pub(super) fn element_byte_range(buffer_def: &RafxBufferDef) -> (u64, u64) {
 /// spirv-cross emits every storage buffer as a `(RW)ByteAddressBuffer`, which
 /// D3D12 reads through a raw view: `R32_TYPELESS` with the RAW flag, ranged
 /// in whole 32-bit words from a 16-byte aligned offset.
-pub(super) fn raw_buffer_range(byte_offset: u64, byte_size: u64) -> RafxResult<RawBufferRange> {
+pub(super) fn raw_buffer_range(
+    byte_offset: u64,
+    byte_size: u64,
+) -> RafxResult<RawBufferRange> {
     let alignment = d3d12::D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT as u64;
     if byte_offset % alignment != 0 {
         Err(format!(

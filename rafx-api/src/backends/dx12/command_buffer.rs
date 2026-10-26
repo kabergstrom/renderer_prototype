@@ -1435,10 +1435,17 @@ fn copy_region(
 }
 
 /// Width and height of `region` rounded up to whole texel blocks of `format`.
-fn block_extent(format: RafxFormat, region: &RafxExtents3D) -> (u32, u32) {
+fn block_extent(
+    format: RafxFormat,
+    region: &RafxExtents3D,
+) -> (u32, u32) {
     (
-        region.width.next_multiple_of(format.block_width_in_pixels()),
-        region.height.next_multiple_of(format.block_height_in_pixels()),
+        region
+            .width
+            .next_multiple_of(format.block_width_in_pixels()),
+        region
+            .height
+            .next_multiple_of(format.block_height_in_pixels()),
     )
 }
 

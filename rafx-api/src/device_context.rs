@@ -309,8 +309,8 @@ impl RafxDeviceContext {
                 RafxQueryPool::Vk(inner.create_query_pool(query_pool_def)?)
             }
             #[cfg(feature = "rafx-metal")]
-            RafxDeviceContext::Metal(_) => {
-                return Err("GPU timestamp queries are not implemented on the metal backend")?
+            RafxDeviceContext::Metal(inner) => {
+                RafxQueryPool::Metal(inner.create_query_pool(query_pool_def)?)
             }
             #[cfg(feature = "rafx-gles2")]
             RafxDeviceContext::Gles2(_) => {
@@ -753,24 +753,44 @@ impl RafxDeviceContext {
     ) -> RafxResult<RafxShaderModule> {
         Ok(match self {
             #[cfg(feature = "rafx-dx12")]
-            RafxDeviceContext::Dx12(inner) => {
-                RafxShaderModule::Dx12(inner.create_shader_module(shader_module_def.dx12.ok_or("shader module has no DX12 code")?)?)
-            }
+            RafxDeviceContext::Dx12(inner) => RafxShaderModule::Dx12(
+                inner.create_shader_module(
+                    shader_module_def
+                        .dx12
+                        .ok_or("shader module has no DX12 code")?,
+                )?,
+            ),
             #[cfg(feature = "rafx-vulkan")]
-            RafxDeviceContext::Vk(inner) => {
-                RafxShaderModule::Vk(inner.create_shader_module(shader_module_def.vk.ok_or("shader module has no Vulkan code")?)?)
-            }
+            RafxDeviceContext::Vk(inner) => RafxShaderModule::Vk(
+                inner.create_shader_module(
+                    shader_module_def
+                        .vk
+                        .ok_or("shader module has no Vulkan code")?,
+                )?,
+            ),
             #[cfg(feature = "rafx-metal")]
             RafxDeviceContext::Metal(inner) => RafxShaderModule::Metal(
-                inner.create_shader_module(shader_module_def.metal.ok_or("shader module has no Metal code")?)?,
+                inner.create_shader_module(
+                    shader_module_def
+                        .metal
+                        .ok_or("shader module has no Metal code")?,
+                )?,
             ),
             #[cfg(feature = "rafx-gles2")]
             RafxDeviceContext::Gles2(inner) => RafxShaderModule::Gles2(
-                inner.create_shader_module(shader_module_def.gles2.ok_or("shader module has no GLES2 code")?)?,
+                inner.create_shader_module(
+                    shader_module_def
+                        .gles2
+                        .ok_or("shader module has no GLES2 code")?,
+                )?,
             ),
             #[cfg(feature = "rafx-gles3")]
             RafxDeviceContext::Gles3(inner) => RafxShaderModule::Gles3(
-                inner.create_shader_module(shader_module_def.gles3.ok_or("shader module has no GLES3 code")?)?,
+                inner.create_shader_module(
+                    shader_module_def
+                        .gles3
+                        .ok_or("shader module has no GLES3 code")?,
+                )?,
             ),
             #[cfg(any(
                 feature = "rafx-empty",
@@ -783,7 +803,11 @@ impl RafxDeviceContext {
                 ))
             ))]
             RafxDeviceContext::Empty(inner) => RafxShaderModule::Empty(
-                inner.create_shader_module(shader_module_def.empty.ok_or("shader module has no empty code")?)?,
+                inner.create_shader_module(
+                    shader_module_def
+                        .empty
+                        .ok_or("shader module has no empty code")?,
+                )?,
             ),
         })
     }

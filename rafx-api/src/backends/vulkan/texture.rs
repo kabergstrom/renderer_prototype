@@ -362,10 +362,7 @@ impl RafxTextureVulkan {
             let view_formats = [format_vk, storage_twin.unwrap_or(format_vk)];
             let mut format_list =
                 vk::ImageFormatListCreateInfo::builder().view_formats(&view_formats);
-            let api_version = device_context
-                .physical_device_info()
-                .properties
-                .api_version;
+            let api_version = device_context.physical_device_info().properties.api_version;
             if storage_twin.is_some() && api_version >= vk::make_api_version(0, 1, 2, 0) {
                 image_create_info = image_create_info.push_next(&mut format_list);
             }

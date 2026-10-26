@@ -78,7 +78,11 @@ impl RafxTimelineSemaphoreMetal {
     }
 
     /// CPU-side wait until the semaphore reaches at least `value`.
-    pub fn wait(&self, value: u64, timeout_ns: u64) -> RafxResult<()> {
+    pub fn wait(
+        &self,
+        value: u64,
+        timeout_ns: u64,
+    ) -> RafxResult<()> {
         // Fast path: already reached.
         if self.metal.shared_event.signaled_value() >= value {
             return Ok(());
@@ -86,20 +90,19 @@ impl RafxTimelineSemaphoreMetal {
 
         // Register a notification so the GPU signals us when it reaches `value`.
         let ws = self.wait_state.clone();
-        let block = block::ConcreteBlock::new(move |_event: &metal_rs::SharedEventRef, new_val: u64| {
-            let mut guard = ws.mu.lock().unwrap();
-            if new_val > *guard {
-                *guard = new_val;
-            }
-            ws.cv.notify_all();
-        });
+        let block =
+            block::ConcreteBlock::new(move |_event: &metal_rs::SharedEventRef, new_val: u64| {
+                let mut guard = ws.mu.lock().unwrap();
+                if new_val > *guard {
+                    *guard = new_val;
+                }
+                ws.cv.notify_all();
+            });
         let block = block.copy();
 
-        self.metal.shared_event.notify(
-            &self.metal.listener,
-            value,
-            block,
-        );
+        self.metal
+            .shared_event
+            .notify(&self.metal.listener, value, block);
 
         // Wait on condvar with timeout.
         let timeout = if timeout_ns == u64::MAX {
@@ -126,7 +129,10 @@ impl RafxTimelineSemaphoreMetal {
     }
 
     /// CPU-side signal: set the semaphore to `value`.
-    pub fn signal(&self, value: u64) -> RafxResult<()> {
+    pub fn signal(
+        &self,
+        value: u64,
+    ) -> RafxResult<()> {
         self.metal.shared_event.set_signaled_value(value);
         // Also update the condvar state so any CPU waiters wake up.
         let mut guard = self.wait_state.mu.lock().unwrap();

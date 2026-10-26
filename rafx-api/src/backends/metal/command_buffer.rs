@@ -1,7 +1,7 @@
 use crate::metal::{
     ArgumentBufferData, BarrierFlagsMetal, RafxBufferMetal, RafxCommandPoolMetal,
-    RafxDescriptorSetArrayMetal, RafxDescriptorSetHandleMetal, RafxPipelineMetal, RafxQueueMetal,
-    RafxRootSignatureMetal, RafxTextureMetal,
+    RafxDescriptorSetArrayMetal, RafxDescriptorSetHandleMetal, RafxPipelineMetal,
+    RafxQueryPoolMetal, RafxQueueMetal, RafxRootSignatureMetal, RafxTextureMetal,
 };
 use crate::{
     RafxBufferBarrier, RafxCmdCopyBufferToBufferParams, RafxCmdCopyBufferToTextureParams,
@@ -53,6 +53,13 @@ pub struct RafxCommandBufferMetalInner {
     // Slots the bound pipeline's shaders read.
     dynamic_offsets_len: u32,
     dynamic_offsets_dirty: bool,
+
+    // Between cmd_begin_render_pass and cmd_end_render_pass (the render encoder outlives it
+    // until the next encoder).
+    in_render_pass: bool,
+    // Timestamps written in the current render pass, sampled when it ends: a render encoder
+    // can't be sampled in the middle.
+    pending_timestamps: Vec<(RafxQueryPoolMetal, u32)>,
 }
 
 const DYNAMIC_OFFSET_SLOTS: usize =
@@ -145,6 +152,8 @@ impl RafxCommandBufferMetal {
             dynamic_offsets: [0; DYNAMIC_OFFSET_SLOTS],
             dynamic_offsets_len: 0,
             dynamic_offsets_dirty: false,
+            in_render_pass: false,
+            pending_timestamps: Vec::new(),
         };
 
         Ok(RafxCommandBufferMetal {
@@ -168,6 +177,8 @@ impl RafxCommandBufferMetal {
             inner.dynamic_offsets = [0; DYNAMIC_OFFSET_SLOTS];
             inner.dynamic_offsets_len = 0;
             inner.dynamic_offsets_dirty = false;
+            inner.in_render_pass = false;
+            inner.pending_timestamps.clear();
             Ok(())
         })
     }
@@ -300,6 +311,7 @@ impl RafxCommandBufferMetal {
             }
 
             inner.render_encoder = Some(render_encoder.to_owned());
+            inner.in_render_pass = true;
             inner.dynamic_offsets_dirty = true;
             self.wait_for_barriers(&*inner)?;
             // set heaps?
@@ -385,7 +397,96 @@ impl RafxCommandBufferMetal {
     }
 
     pub fn cmd_end_render_pass(&self) -> RafxResult<()> {
-        // no action necessary
+        // The encoder itself ends with the next one
+        let mut inner = self.inner.borrow_mut();
+        inner.in_render_pass = false;
+        let pending = std::mem::take(&mut inner.pending_timestamps);
+        drop(inner);
+        let mut sampled: Vec<(RafxQueryPoolMetal, u32)> = Vec::new();
+        for (pool, query) in pending {
+            let source = sampled
+                .iter()
+                .find(|(p, _)| {
+                    p.metal_counter_sample_buffer() as *const _
+                        == pool.metal_counter_sample_buffer() as *const _
+                })
+                .map(|&(_, source)| source);
+            match source {
+                Some(source) => pool.set_source(query, source),
+                None => {
+                    objc::rc::autoreleasepool(|| self.sample_timestamp(&pool, query))?;
+                    sampled.push((pool, query));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn cmd_reset_query_pool(
+        &self,
+        query_pool: &RafxQueryPoolMetal,
+    ) -> RafxResult<()> {
+        // Nothing on the GPU timeline: a sample overwrites its slot.
+        query_pool.reset();
+        Ok(())
+    }
+
+    /// Apple GPUs sample counters only at encoder boundaries: outside a render pass this ends
+    /// the current encoder and samples the end of a little blit encoder of its own, which waits
+    /// for everything before it; inside one, the sample waits for the pass's end.
+    pub fn cmd_write_timestamp(
+        &self,
+        query_pool: &RafxQueryPoolMetal,
+        query_index: u32,
+    ) -> RafxResult<()> {
+        let mut inner = self.inner.borrow_mut();
+        if inner.in_render_pass {
+            inner
+                .pending_timestamps
+                .push((query_pool.clone(), query_index));
+            return Ok(());
+        }
+        drop(inner);
+        objc::rc::autoreleasepool(|| self.sample_timestamp(query_pool, query_index))
+    }
+
+    fn sample_timestamp(
+        &self,
+        query_pool: &RafxQueryPoolMetal,
+        query_index: u32,
+    ) -> RafxResult<()> {
+        let mut inner = self.inner.borrow_mut();
+        // The previous encoder signals the fence as it ends, the stamp's waits on it.
+        let barrier_flags = self.queue.barrier_flags();
+        Self::do_end_current_encoders(&self.queue, &mut *inner, true)?;
+
+        let descriptor = metal_rs::BlitPassDescriptor::new();
+        let attachment = descriptor
+            .sample_buffer_attachments()
+            .object_at(0)
+            .ok_or("no metal blit pass sample buffer attachment")?;
+        attachment.set_sample_buffer(query_pool.metal_counter_sample_buffer());
+        attachment.set_start_of_encoder_sample_index(metal_rs::COUNTER_DONT_SAMPLE);
+        attachment.set_end_of_encoder_sample_index(query_index as u64);
+        let encoder = inner
+            .command_buffer
+            .as_ref()
+            .unwrap()
+            .blit_command_encoder_with_descriptor(descriptor)
+            .to_owned();
+        if inner.debug_names_enabled {
+            encoder.set_label("timestamp");
+        }
+        encoder.wait_for_fence(self.queue.metal_fence());
+        self.queue.clear_barrier_flags();
+        // Work, so the encoder (and its sample) isn't dropped.
+        encoder.fill_buffer(query_pool.scratch(), metal_rs::NSRange::new(0, 4), 0);
+        inner.blit_encoder = Some(encoder);
+        // The barriers recorded before the stamp still hold for the work after it: carry them
+        // over (the stamp signals the fence as it ends).
+        self.queue.add_barrier_flags(barrier_flags);
+        Self::do_end_current_encoders(&self.queue, &mut *inner, false)?;
+        query_pool.set_source(query_index, query_index);
         Ok(())
     }
 

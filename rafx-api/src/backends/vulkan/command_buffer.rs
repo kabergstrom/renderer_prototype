@@ -806,8 +806,7 @@ impl RafxCommandBufferVulkan {
                 && !matches!(
                     barrier.queue_transition,
                     RafxBarrierQueueTransition::AcquireFromExternal
-                )
-            {
+                ) {
                 vk::ImageLayout::UNDEFINED
             } else {
                 super::util::resource_state_to_image_layout(barrier.src_state).unwrap()

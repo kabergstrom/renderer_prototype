@@ -1242,8 +1242,8 @@ impl RafxCommandBuffer {
                 inner.cmd_reset_query_pool(query_pool.vk_query_pool().unwrap())
             }
             #[cfg(feature = "rafx-metal")]
-            RafxCommandBuffer::Metal(_) => {
-                Err("GPU timestamp queries are not implemented on the metal backend")?
+            RafxCommandBuffer::Metal(inner) => {
+                inner.cmd_reset_query_pool(query_pool.metal_query_pool().unwrap())
             }
             #[cfg(feature = "rafx-gles2")]
             RafxCommandBuffer::Gles2(_) => {
@@ -1287,8 +1287,8 @@ impl RafxCommandBuffer {
                 inner.cmd_write_timestamp(query_pool.vk_query_pool().unwrap(), query_index)
             }
             #[cfg(feature = "rafx-metal")]
-            RafxCommandBuffer::Metal(_) => {
-                Err("GPU timestamp queries are not implemented on the metal backend")?
+            RafxCommandBuffer::Metal(inner) => {
+                inner.cmd_write_timestamp(query_pool.metal_query_pool().unwrap(), query_index)
             }
             #[cfg(feature = "rafx-gles2")]
             RafxCommandBuffer::Gles2(_) => {
@@ -1339,7 +1339,9 @@ impl RafxCommandBuffer {
             ),
             #[cfg(feature = "rafx-metal")]
             RafxCommandBuffer::Metal(_) => {
-                Err("GPU timestamp queries are not implemented on the metal backend")?
+                // Samples are resolved on the CPU (RafxQueryPoolMetal::read_timestamps)
+                let _ = (query_pool, first_query, query_count);
+                Ok(())
             }
             #[cfg(feature = "rafx-gles2")]
             RafxCommandBuffer::Gles2(_) => {

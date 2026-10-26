@@ -73,6 +73,34 @@ impl RafxQueueMetal {
         self.inner.queue.as_ref()
     }
 
+    /// Nanoseconds per GPU timestamp tick (RafxQueryPoolMetal), measured once against the CPU
+    /// clock over a few milliseconds: Metal reports no period, and the GPU's counter need not
+    /// count nanoseconds.
+    pub fn timestamp_period_ns(&self) -> RafxResult<f32> {
+        static PERIOD_NS: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+        let device = self.inner.device_context.device();
+        let sample = || {
+            let (mut cpu, mut gpu) = (0u64, 0u64);
+            device.sample_timestamps(&mut cpu, &mut gpu);
+            (std::time::Instant::now(), gpu)
+        };
+        let period = *PERIOD_NS.get_or_init(|| {
+            let (t0, g0) = sample();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let (t1, g1) = sample();
+            let ticks = g1.saturating_sub(g0);
+            if ticks == 0 {
+                return 0.0;
+            }
+            (t1 - t0).as_nanos() as f64 as f32 / ticks as f32
+        });
+        if period > 0.0 {
+            Ok(period)
+        } else {
+            Err("the metal GPU timestamp counter did not advance")?
+        }
+    }
+
     pub fn create_command_pool(
         &self,
         command_pool_def: &RafxCommandPoolDef,
@@ -227,17 +255,16 @@ impl RafxQueueMetal {
 
             // A command buffer that fails (a GPU fault or timeout) skips the rest of its
             // commands, its event signals included, and nothing else reports it.
-            let report_error = block::ConcreteBlock::new(
-                |command_buffer: &metal_rs::CommandBufferRef| {
+            let report_error =
+                block::ConcreteBlock::new(|command_buffer: &metal_rs::CommandBufferRef| {
                     if command_buffer.status() == metal_rs::MTLCommandBufferStatus::Error {
                         log::error!(
                             "Metal command buffer failed: {}",
                             command_buffer_error(command_buffer)
                         );
                     }
-                },
-            )
-            .copy();
+                })
+                .copy();
             for command_buffer in &metal_command_buffers {
                 command_buffer.add_completed_handler(&report_error);
             }
@@ -337,7 +364,9 @@ unsafe fn ns_string(string: *mut objc::runtime::Object) -> String {
     if text.is_null() {
         return String::new();
     }
-    std::ffi::CStr::from_ptr(text).to_string_lossy().into_owned()
+    std::ffi::CStr::from_ptr(text)
+        .to_string_lossy()
+        .into_owned()
 }
 
 unsafe fn ns_string_from_str(string: &str) -> *mut objc::runtime::Object {

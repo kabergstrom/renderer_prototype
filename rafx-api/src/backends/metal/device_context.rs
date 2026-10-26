@@ -1,8 +1,8 @@
 use crate::{
     RafxApiDefMetal, RafxBufferDef, RafxComputePipelineDef, RafxDescriptorSetArrayDef,
-    RafxDeviceContext, RafxDeviceInfo, RafxFormat, RafxGraphicsPipelineDef, RafxQueueType,
-    RafxResourceType, RafxResult, RafxRootSignatureDef, RafxSampleCount, RafxSamplerDef,
-    RafxShaderModuleDefMetal, RafxShaderStageDef, RafxSwapchainDef, RafxTextureDef,
+    RafxDeviceContext, RafxDeviceInfo, RafxFormat, RafxGraphicsPipelineDef, RafxQueryPoolDef,
+    RafxQueueType, RafxResourceType, RafxResult, RafxRootSignatureDef, RafxSampleCount,
+    RafxSamplerDef, RafxShaderModuleDefMetal, RafxShaderStageDef, RafxSwapchainDef, RafxTextureDef,
 };
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::sync::Arc;
@@ -10,8 +10,9 @@ use std::sync::Arc;
 use crate::metal::features::MetalFeatures;
 use crate::metal::{
     RafxBufferMetal, RafxDescriptorSetArrayMetal, RafxFenceMetal, RafxPipelineMetal,
-    RafxQueueMetal, RafxRootSignatureMetal, RafxSamplerMetal, RafxSemaphoreMetal, RafxShaderMetal,
-    RafxShaderModuleMetal, RafxSwapchainMetal, RafxTextureMetal,
+    RafxQueryPoolMetal, RafxQueueMetal, RafxRootSignatureMetal, RafxSamplerMetal,
+    RafxSemaphoreMetal, RafxShaderMetal, RafxShaderModuleMetal, RafxSwapchainMetal,
+    RafxTextureMetal,
 };
 
 #[cfg(debug_assertions)]
@@ -48,6 +49,8 @@ impl Drop for RafxDeviceContextMetalInner {
 
 impl RafxDeviceContextMetalInner {
     pub fn new(metal_api_def: &RafxApiDefMetal) -> RafxResult<Self> {
+        let device = metal_rs::Device::system_default().expect("no device found");
+
         let device_info = RafxDeviceInfo {
             supports_multithreaded_usage: true,
             debug_names_enabled: metal_api_def.enable_debug_names,
@@ -58,7 +61,7 @@ impl RafxDeviceContextMetalInner {
             upload_texture_alignment: 16,
             upload_texture_row_alignment: 1,
             supports_clamp_to_border_color: true, //TODO: Check for iOS support
-            supports_gpu_timestamps: false,
+            supports_gpu_timestamps: crate::metal::query_pool_supports_gpu_timestamps(&device),
             max_vertex_attribute_count: 31,
         };
 
@@ -70,8 +73,6 @@ impl RafxDeviceContextMetalInner {
             all_contexts.insert(0, create_backtrace);
             all_contexts
         };
-
-        let device = metal_rs::Device::system_default().expect("no device found");
 
         let metal_features = MetalFeatures::from_device(device.as_ref());
 
@@ -203,6 +204,13 @@ impl RafxDeviceContextMetal {
 
     pub fn create_fence(&self) -> RafxResult<RafxFenceMetal> {
         RafxFenceMetal::new(self)
+    }
+
+    pub fn create_query_pool(
+        &self,
+        query_pool_def: &RafxQueryPoolDef,
+    ) -> RafxResult<RafxQueryPoolMetal> {
+        RafxQueryPoolMetal::new(self, query_pool_def)
     }
 
     pub fn create_semaphore(&self) -> RafxResult<RafxSemaphoreMetal> {

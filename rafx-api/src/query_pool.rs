@@ -11,6 +11,8 @@ use crate::dx12::RafxQueryPoolDx12;
     ))
 ))]
 use crate::empty::RafxQueryPoolEmpty;
+#[cfg(feature = "rafx-metal")]
+use crate::metal::RafxQueryPoolMetal;
 #[cfg(feature = "rafx-vulkan")]
 use crate::vulkan::RafxQueryPoolVulkan;
 use crate::RafxResult;
@@ -37,6 +39,8 @@ pub enum RafxQueryPool {
     Dx12(RafxQueryPoolDx12),
     #[cfg(feature = "rafx-vulkan")]
     Vk(RafxQueryPoolVulkan),
+    #[cfg(feature = "rafx-metal")]
+    Metal(RafxQueryPoolMetal),
     #[cfg(any(
         feature = "rafx-empty",
         not(any(
@@ -55,7 +59,8 @@ pub enum RafxQueryPool {
         not(feature = "rafx-empty"),
         not(feature = "rafx-dx12"),
         not(feature = "rafx-vulkan"),
-        any(feature = "rafx-metal", feature = "rafx-gles2", feature = "rafx-gles3")
+        not(feature = "rafx-metal"),
+        any(feature = "rafx-gles2", feature = "rafx-gles3")
     ))]
     Unsupported,
 }
@@ -68,6 +73,8 @@ impl RafxQueryPool {
             RafxQueryPool::Dx12(inner) => inner.query_count(),
             #[cfg(feature = "rafx-vulkan")]
             RafxQueryPool::Vk(inner) => inner.query_count(),
+            #[cfg(feature = "rafx-metal")]
+            RafxQueryPool::Metal(inner) => inner.query_count(),
             #[cfg(any(
                 feature = "rafx-empty",
                 not(any(
@@ -83,7 +90,8 @@ impl RafxQueryPool {
                 not(feature = "rafx-empty"),
                 not(feature = "rafx-dx12"),
                 not(feature = "rafx-vulkan"),
-                any(feature = "rafx-metal", feature = "rafx-gles2", feature = "rafx-gles3")
+                not(feature = "rafx-metal"),
+                any(feature = "rafx-gles2", feature = "rafx-gles3")
             ))]
             RafxQueryPool::Unsupported => 0,
         }
@@ -102,6 +110,8 @@ impl RafxQueryPool {
             RafxQueryPool::Dx12(inner) => inner.read_timestamps(first_query, results),
             #[cfg(feature = "rafx-vulkan")]
             RafxQueryPool::Vk(inner) => inner.read_timestamps(first_query, results),
+            #[cfg(feature = "rafx-metal")]
+            RafxQueryPool::Metal(inner) => inner.read_timestamps(first_query, results),
             #[cfg(any(
                 feature = "rafx-empty",
                 not(any(
@@ -117,7 +127,8 @@ impl RafxQueryPool {
                 not(feature = "rafx-empty"),
                 not(feature = "rafx-dx12"),
                 not(feature = "rafx-vulkan"),
-                any(feature = "rafx-metal", feature = "rafx-gles2", feature = "rafx-gles3")
+                not(feature = "rafx-metal"),
+                any(feature = "rafx-gles2", feature = "rafx-gles3")
             ))]
             RafxQueryPool::Unsupported => {
                 Err("GPU timestamp queries are not implemented on the active backend")?
@@ -143,6 +154,17 @@ impl RafxQueryPool {
         #[allow(unreachable_patterns)]
         match self {
             RafxQueryPool::Vk(inner) => Some(inner),
+            _ => None,
+        }
+    }
+
+    /// Get the underlying metal API object. This provides access to any internally created
+    /// metal objects.
+    #[cfg(feature = "rafx-metal")]
+    pub fn metal_query_pool(&self) -> Option<&RafxQueryPoolMetal> {
+        #[allow(unreachable_patterns)]
+        match self {
+            RafxQueryPool::Metal(inner) => Some(inner),
             _ => None,
         }
     }
