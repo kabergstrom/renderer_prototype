@@ -32,6 +32,9 @@ pub(crate) struct DescriptorInfo {
 
     // --- metal-specific ---
     //pub(crate) usage: metal::MTLResourceUsage,
+    // Push constants: the buffer index. Otherwise its index over the set's descriptors of
+    // every stage, for residency (ArgumentBufferData::resource_pointers); the shaders read it
+    // at its StageRegion ids.
     pub(crate) argument_buffer_id: NSUInteger,
 }
 
@@ -45,9 +48,25 @@ pub(crate) struct DescriptorSetLayoutInfo {
     // --- metal-specific ---
     // All argument buffer IDs must be within 0..argument_buffer_id_range
     pub(crate) argument_buffer_id_range: u32,
+    // The set's argument buffer layouts as the shader stages see them (StageRegion).
+    pub(crate) regions: Vec<StageRegion>,
     // pub(crate) sampler_count: u32,
     // pub(crate) texture_count: u32,
     // pub(crate) buffer_count: u32,
+}
+
+/// One layout of a set's argument buffer, shared by the stages in `stages`. The shader
+/// processor compiles each stage alone (rafx-shader-processor msl_assign_argument_buffer_ids),
+/// numbering the set's resources that stage declares in binding order, so a stage that lacks
+/// one of a lower binding than another stage's numbers the rest differently. Each distinct
+/// numbering gets a region of its own in the set's argument buffer, encoded with the same
+/// resources at its ids, and its stages bind the buffer at that region.
+#[derive(Debug)]
+pub(crate) struct StageRegion {
+    pub(crate) stages: RafxShaderStageFlags,
+    pub(crate) argument_descriptors: Vec<ArgumentDescriptor>,
+    // The id in this region of each of the set's descriptors these stages declare.
+    pub(crate) ids: FnvHashMap<RafxDescriptorIndex, u32>,
 }
 
 #[derive(Debug)]
@@ -82,7 +101,6 @@ pub(crate) struct RafxRootSignatureMetalInner {
         [Option<RafxDescriptorIndex>; ALL_SHADER_STAGE_FLAGS.len()],
 
     // --- metal-specific ---
-    pub(crate) argument_descriptors: [Vec<ArgumentDescriptor>; MAX_DESCRIPTOR_SET_LAYOUTS],
     pub(crate) argument_buffer_resource_usages:
         [Arc<Vec<MTLResourceUsage>>; MAX_DESCRIPTOR_SET_LAYOUTS],
     // Dynamic offsets buffer slots (crate::msl_dynamic_offset_index) of every buffer in each
@@ -349,29 +367,59 @@ impl RafxRootSignatureMetal {
             }
         }
 
-        let mut argument_descriptors = [vec![], vec![], vec![], vec![]];
-
-        for i in 0..MAX_DESCRIPTOR_SET_LAYOUTS {
-            for &resource_index in &layouts[i].descriptors {
-                let descriptor = &descriptors[resource_index.0 as usize];
-
-                let access =
-                    super::util::resource_type_mtl_argument_access(descriptor.resource_type);
-                let data_type =
-                    super::util::resource_type_mtl_data_type(descriptor.resource_type).unwrap();
-
-                //TODO: Can we generate list of arg descriptors or arg buffer encoder here and reuse?
-
-                let argument_descriptor = ArgumentDescriptor {
-                    access: access,
-                    array_length: descriptor.element_count as _,
-                    data_type: data_type,
-                    index: descriptor.argument_buffer_id as _,
-                    //TODO: Temp, not sure if it's this gets changed when bound
-                    texture_type: MTLTextureType::D2,
+        // The stages' argument buffer layouts (StageRegion), the descriptors in binding order
+        // as layouts[i].descriptors holds them (merged_resources is sorted by binding).
+        for layout in &mut layouts {
+            for stage in [
+                RafxShaderStageFlags::VERTEX,
+                RafxShaderStageFlags::FRAGMENT,
+                RafxShaderStageFlags::COMPUTE,
+            ] {
+                let declared: Vec<RafxDescriptorIndex> = layout
+                    .descriptors
+                    .iter()
+                    .copied()
+                    .filter(|&d| {
+                        descriptors[d.0 as usize]
+                            .used_in_shader_stages
+                            .intersects(stage)
+                    })
+                    .collect();
+                if declared.is_empty() {
+                    continue;
+                }
+                let same = layout.regions.iter_mut().find(|r| {
+                    r.ids.len() == declared.len() && declared.iter().all(|d| r.ids.contains_key(d))
+                });
+                if let Some(region) = same {
+                    region.stages |= stage;
+                    continue;
+                }
+                let mut region = StageRegion {
+                    stages: stage,
+                    argument_descriptors: Vec::with_capacity(declared.len()),
+                    ids: FnvHashMap::default(),
                 };
-
-                argument_descriptors[i].push(argument_descriptor);
+                let mut next_id = 0;
+                for d in declared {
+                    let descriptor = &descriptors[d.0 as usize];
+                    region.argument_descriptors.push(ArgumentDescriptor {
+                        access: super::util::resource_type_mtl_argument_access(
+                            descriptor.resource_type,
+                        ),
+                        array_length: descriptor.element_count as _,
+                        data_type: super::util::resource_type_mtl_data_type(
+                            descriptor.resource_type,
+                        )
+                        .unwrap(),
+                        index: next_id as _,
+                        //TODO: Temp, not sure if it's this gets changed when bound
+                        texture_type: MTLTextureType::D2,
+                    });
+                    region.ids.insert(d, next_id);
+                    next_id += descriptor.element_count;
+                }
+                layout.regions.push(region);
             }
         }
 
@@ -439,7 +487,6 @@ impl RafxRootSignatureMetal {
             name_to_descriptor_index,
             push_constant_descriptors,
             argument_buffer_resource_usages,
-            argument_descriptors,
             buffer_dynamic_offset_slots,
             dynamic_binding_slots,
             dynamic_offsets_len,

@@ -813,16 +813,23 @@ impl RafxCommandBufferMetal {
                     .render_encoder
                     .as_ref()
                     .ok_or("Must begin render pass before binding graphics descriptor sets")?;
-                render_encoder.set_vertex_buffer(
-                    set_index as _,
-                    Some(argument_buffer),
-                    argument_buffer_offset as _,
-                );
-                render_encoder.set_fragment_buffer(
-                    set_index as _,
-                    Some(argument_buffer),
-                    argument_buffer_offset as _,
-                );
+                // Each stage reads its own region of the set (StageRegion).
+                for (stages, offset) in argument_buffer_data.regions() {
+                    if stages.intersects(RafxShaderStageFlags::VERTEX) {
+                        render_encoder.set_vertex_buffer(
+                            set_index as _,
+                            Some(argument_buffer),
+                            (argument_buffer_offset + offset) as _,
+                        );
+                    }
+                    if stages.intersects(RafxShaderStageFlags::FRAGMENT) {
+                        render_encoder.set_fragment_buffer(
+                            set_index as _,
+                            Some(argument_buffer),
+                            (argument_buffer_offset + offset) as _,
+                        );
+                    }
+                }
                 argument_buffer_data
                     .make_resources_resident_render_encoder(array_index, render_encoder);
             }
@@ -831,11 +838,15 @@ impl RafxCommandBufferMetal {
                     .compute_encoder
                     .as_ref()
                     .ok_or("Must bind compute pipeline before binding compute descriptor sets")?;
-                compute_encoder.set_buffer(
-                    set_index as _,
-                    Some(argument_buffer),
-                    argument_buffer_offset as _,
-                );
+                for (stages, offset) in argument_buffer_data.regions() {
+                    if stages.intersects(RafxShaderStageFlags::COMPUTE) {
+                        compute_encoder.set_buffer(
+                            set_index as _,
+                            Some(argument_buffer),
+                            (argument_buffer_offset + offset) as _,
+                        );
+                    }
+                }
                 argument_buffer_data
                     .make_resources_resident_compute_encoder(array_index, compute_encoder);
             }

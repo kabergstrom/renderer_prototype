@@ -515,9 +515,11 @@ pub(crate) fn msl_assign_argument_buffer_ids(
     assert_eq!(MAX_DESCRIPTOR_SET_LAYOUTS, 4);
     //
     // The [[id(n)]] of each resource inside its set's argument buffer. These must be the ids
-    // RafxRootSignatureMetal encodes: one counter per set (all resource kinds share the
-    // argument buffer's id space), resources in binding order, each taking
-    // element_count_normalized() ids. Immutable samplers take none: they become constexpr
+    // RafxRootSignatureMetal encodes for this stage (its StageRegion): one counter per set
+    // (all resource kinds share the argument buffer's id space), the resources this stage
+    // declares in binding order, each taking element_count_normalized() ids. A stage is
+    // compiled alone, so another stage's resources cannot count here; the root signature
+    // gives each stage numbering a region of its own. Immutable samplers take none: they become constexpr
     // samplers in the shader, outside the argument buffer, and are left out of the Metal
     // reflection (msl_constexpr_sampler_bindings). They must not leave a gap either: without
     // pad_argument_buffer_resources spirv-cross lays the argument buffer struct out in
